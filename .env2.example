@@ -1,0 +1,53 @@
+APP_NAME=Food Route Backend
+APP_ENV=production
+API_V1_PREFIX=/api/v1
+
+APP_FIREBASE_PROJECT_ID=your-real-firebase-project-id
+APP_FIREBASE_USE_EMULATORS=false
+APP_FIREBASE_WEB_API_KEY=your-real-firebase-web-api-key
+APP_FIREBASE_STORAGE_BUCKET=your-real-firebase-project-id.firebasestorage.app
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
+# Or, if you prefer inline JSON, use APP_FIREBASE_SERVICE_ACCOUNT_JSON instead.
+# APP_FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"...","private_key_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n","client_email":"...","client_id":"...","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_x509_cert_url":"..."}
+IMAGE_UPLOAD_MAX_BYTES=5242880
+IMAGE_STORAGE_PROVIDER=firebase
+
+# Temporary Cloudinary image storage option
+# IMAGE_STORAGE_PROVIDER=cloudinary
+# CLOUDINARY_CLOUD_NAME=your-cloud-name
+# CLOUDINARY_API_KEY=your-cloudinary-api-key
+# CLOUDINARY_API_SECRET=your-cloudinary-api-secret
+
+
+OTP_SIGNING_SECRET=use-a-long-random-secret
+OTP_EXPIRY_MINUTES=10
+OTP_RESEND_COOLDOWN_SECONDS=60
+OTP_MAX_ATTEMPTS=5
+
+INITIAL_SUPER_ADMIN_FULLNAME=Super Admin
+INITIAL_SUPER_ADMIN_PHONE=+8801700000000
+INITIAL_SUPER_ADMIN_EMAIL=admin@example.com
+INITIAL_SUPER_ADMIN_PASSWORD=Password123
+
+CORS_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173
+CORS_ALLOW_ORIGIN_REGEX=
+CORS_ALLOW_METHODS=*
+CORS_ALLOW_HEADERS=*
+CORS_ALLOW_CREDENTIALS=false
+
+EMAIL_DELIVERY_MODE=smtp
+AUTH_VERIFICATION_MODE=otp
+AUTH_PASSWORD_RESET_MODE=otp
+PUSH_NOTIFICATION_PROVIDER=onesignal
+ONESIGNAL_APP_ID=your-onesignal-app-id
+ONESIGNAL_REST_API_KEY=your-onesignal-rest-api-key
+ONESIGNAL_API_URL=https://api.onesignal.com/notifications
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=yourname@gmail.com
+SMTP_PASSWORD=your-16-digit-app-password
+SMTP_USE_STARTTLS=true
+SMTP_USE_SSL=false
+EMAIL_FROM_ADDRESS=yourname@gmail.com
+EMAIL_REPLY_TO=yourname@gmail.com
