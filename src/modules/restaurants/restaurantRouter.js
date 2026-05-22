@@ -10,15 +10,10 @@ export function createRestaurantRouter(config) {
   const upload = multer();
   const controller = createRestaurantController({ getRestaurantServices, config });
 
-<<<<<<< HEAD
   router.post('/', upload.single('image'), asyncHandler(controller.createRestaurant));
   router.put('/:restaurantId', upload.single('image'), asyncHandler(controller.updateRestaurant));
-=======
-  router.post('/', optionalSingleUpload('image'), asyncHandler(controller.createRestaurant));
-  router.put('/:restaurantId', optionalSingleUpload('image'), asyncHandler(controller.updateRestaurant));
   router.get('/analytics/summary', asyncHandler(controller.listRestaurantAnalytics));
   router.get('/:restaurantId/analytics', asyncHandler(controller.getRestaurantAnalytics));
->>>>>>> 282f06c (feat: implement restaurant and route analytics endpoints, including check-in summaries and analytics queries)
   router.get('/', asyncHandler(controller.listRestaurants));
   router.get('/:restaurantId', asyncHandler(controller.getRestaurant));
   router.delete('/:restaurantId', asyncHandler(controller.deleteRestaurant));
