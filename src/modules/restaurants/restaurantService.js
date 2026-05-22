@@ -49,15 +49,66 @@ function restaurantResponse(record) {
   };
 }
 
+const ANALYTICS_RANGES = {
+  last_7_days: 7,
+  last_30_days: 30,
+  last_90_days: 90,
+};
+
+const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const HEATMAP_PERIODS = [
+  { key: 'morning', label: 'Morning', from: 5, to: 11 },
+  { key: 'lunch', label: 'Lunch', from: 11, to: 15 },
+  { key: 'afternoon', label: 'Afternoon', from: 15, to: 18 },
+  { key: 'dinner', label: 'Dinner', from: 18, to: 24 },
+];
+
+function roundPercentage(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function utcDayKey(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function analyticsWindow(range, now = new Date()) {
+  const days = ANALYTICS_RANGES[range] ?? ANALYTICS_RANGES.last_30_days;
+  const end = new Date(now);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - days + 1);
+  start.setUTCHours(0, 0, 0, 0);
+  return { range, days, start, end };
+}
+
+function checkinDayIndex(date) {
+  return (date.getUTCDay() + 6) % 7;
+}
+
+function checkinHeatmapPeriod(date) {
+  const hour = date.getUTCHours();
+  return HEATMAP_PERIODS.find((period) => period.from <= hour && hour < period.to) ?? null;
+}
+
+function groupCountsByUser(checkins) {
+  const counts = new Map();
+  for (const checkin of checkins) {
+    counts.set(checkin.userId, (counts.get(checkin.userId) ?? 0) + 1);
+  }
+  return counts;
+}
+
 export class RestaurantService {
   constructor({
     restaurantRepository,
+    checkinRepository = null,
     menuService,
     userRepository,
     identityProvider,
     imageStorage,
   }) {
     this.restaurantRepository = restaurantRepository;
+    this.checkinRepository = checkinRepository;
     this.menuService = menuService;
     this.userRepository = userRepository;
     this.identityProvider = identityProvider;
@@ -154,6 +205,95 @@ export class RestaurantService {
     return restaurantResponse(restaurant);
   }
 
+  async listRestaurantAnalytics({ accessToken, range }) {
+    await this.getCurrentAdmin(accessToken);
+    const window = analyticsWindow(range);
+    const [restaurants, checkins] = await Promise.all([
+      this.restaurantRepository.listAll(),
+      this.listAnalyticsCheckins(),
+    ]);
+    const filtered = this.filterAnalyticsCheckins(checkins, window);
+
+    return {
+      range: window.range,
+      from: window.start,
+      to: window.end,
+      items: restaurants.map((restaurant) => {
+        const restaurantCheckins = filtered.filter((record) => record.restaurantId === restaurant.id);
+        const counts = groupCountsByUser(restaurantCheckins);
+        const repeatVisitors = [...counts.values()].filter((count) => count > 1).length;
+        return {
+          restaurantId: restaurant.id,
+          restaurantName: restaurant.name,
+          city: restaurant.city,
+          imageUrl: restaurant.imageUrl,
+          status: restaurant.status,
+          totalCheckIns: restaurantCheckins.length,
+          uniqueVisitors: counts.size,
+          repeatVisitors,
+          repeatVisitRate: counts.size ? roundPercentage((repeatVisitors / counts.size) * 100) : 0,
+          routeVisitors: 0,
+          conversionRate: counts.size ? 100 : 0,
+        };
+      }),
+      routeTrafficTracked: false,
+    };
+  }
+
+  async getRestaurantAnalytics({ accessToken, restaurantId, range }) {
+    await this.getCurrentAdmin(accessToken);
+    const restaurant = await this.restaurantRepository.getById(restaurantId);
+    if (!restaurant) {
+      throw new ApplicationError({
+        code: 'restaurant_not_found',
+        message: 'No restaurant found for the provided identifier.',
+        statusCode: 404,
+      });
+    }
+
+    const window = analyticsWindow(range);
+    const allRestaurantCheckins = (await this.listAnalyticsCheckins()).filter(
+      (record) => record.restaurantId === restaurant.id,
+    );
+    const checkins = this.filterAnalyticsCheckins(allRestaurantCheckins, window);
+    const userCounts = groupCountsByUser(checkins);
+    const repeatVisitors = [...userCounts.values()].filter((count) => count > 1).length;
+    const vipVisitors = [...userCounts.values()].filter((count) => count >= 5).length;
+    const newVisitors = [...userCounts.keys()].filter((userId) => {
+      const firstCheckin = allRestaurantCheckins
+        .filter((record) => record.userId === userId)
+        .sort((left, right) => left.createdAt - right.createdAt)[0];
+      return firstCheckin && window.start <= firstCheckin.createdAt && firstCheckin.createdAt <= window.end;
+    }).length;
+
+    return {
+      restaurant: restaurantResponse(restaurant),
+      range: window.range,
+      from: window.start,
+      to: window.end,
+      dataBasis: 'check_ins',
+      routeTrafficTracked: false,
+      kpis: {
+        totalCheckIns: checkins.length,
+        uniqueVisitors: userCounts.size,
+        repeatVisitRate: userCounts.size ? roundPercentage((repeatVisitors / userCounts.size) * 100) : 0,
+        routeVisitors: 0,
+        conversionRate: userCounts.size ? 100 : 0,
+      },
+      trend: this.buildAnalyticsTrend(checkins, window),
+      loyalty: {
+        returningCustomers: repeatVisitors,
+        newCustomers: newVisitors,
+        vipCustomers: vipVisitors,
+        returningRate: userCounts.size ? roundPercentage((repeatVisitors / userCounts.size) * 100) : 0,
+      },
+      heatmap: this.buildAnalyticsHeatmap(checkins),
+      routeTrafficPerformance: [],
+      visitBreakdown: this.buildVisitBreakdown(checkins, window),
+      topUsers: this.buildAnalyticsTopUsers(checkins),
+    };
+  }
+
   async deleteRestaurant({ accessToken, restaurantId }) {
     await this.getCurrentAdmin(accessToken);
     const deleted = await this.restaurantRepository.delete(restaurantId);
@@ -164,6 +304,100 @@ export class RestaurantService {
         statusCode: 404,
       });
     }
+  }
+
+  async listAnalyticsCheckins() {
+    return this.checkinRepository ? this.checkinRepository.listAll() : [];
+  }
+
+  filterAnalyticsCheckins(checkins, window) {
+    return checkins.filter(
+      (record) => window.start <= record.createdAt && record.createdAt <= window.end,
+    );
+  }
+
+  buildAnalyticsTrend(checkins, window) {
+    return this.dayBuckets(checkins, window).map((bucket) => ({
+      date: bucket.date,
+      label: bucket.label,
+      visitors: bucket.userIds.size,
+      checkIns: bucket.checkIns,
+    }));
+  }
+
+  buildVisitBreakdown(checkins, window) {
+    return this.dayBuckets(checkins, window)
+      .map((bucket) => ({
+        date: bucket.date,
+        label: bucket.label,
+        visitors: bucket.userIds.size,
+        checkIns: bucket.checkIns,
+        repeatVisits: [...bucket.userCounts.values()].filter((count) => count > 1).length,
+        conversionRate: bucket.userIds.size ? 100 : 0,
+        routeTraffic: 0,
+      }))
+      .reverse();
+  }
+
+  dayBuckets(checkins, window) {
+    const buckets = [];
+    const cursor = new Date(window.start);
+    while (cursor <= window.end) {
+      const date = utcDayKey(cursor);
+      buckets.push({
+        date,
+        label: cursor.toLocaleDateString('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' }),
+        userIds: new Set(),
+        userCounts: new Map(),
+        checkIns: 0,
+      });
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    const byDate = new Map(buckets.map((bucket) => [bucket.date, bucket]));
+    for (const checkin of checkins) {
+      const bucket = byDate.get(utcDayKey(checkin.createdAt));
+      if (!bucket) continue;
+      bucket.checkIns += 1;
+      bucket.userIds.add(checkin.userId);
+      bucket.userCounts.set(checkin.userId, (bucket.userCounts.get(checkin.userId) ?? 0) + 1);
+    }
+    return buckets;
+  }
+
+  buildAnalyticsHeatmap(checkins) {
+    const rows = new Map(
+      HEATMAP_PERIODS.map((period) => [period.key, { period: period.label, values: Array(7).fill(0) }]),
+    );
+    for (const checkin of checkins) {
+      const period = checkinHeatmapPeriod(checkin.createdAt);
+      if (!period) continue;
+      rows.get(period.key).values[checkinDayIndex(checkin.createdAt)] += 1;
+    }
+    return [...rows.values()].map((row) => ({
+      period: row.period,
+      values: row.values,
+      days: Object.fromEntries(DAY_KEYS.map((key, index) => [key, row.values[index]])),
+      dayLabels: DAY_LABELS,
+    }));
+  }
+
+  buildAnalyticsTopUsers(checkins) {
+    const users = new Map();
+    for (const record of checkins) {
+      const current = users.get(record.userId) ?? {
+        userId: record.userId,
+        fullname: record.userFullname || 'Unknown User',
+        email: record.userEmail || '',
+        checkIns: 0,
+        pointsEarned: 0,
+      };
+      current.checkIns += 1;
+      current.pointsEarned += record.awardedPoints ?? 0;
+      users.set(record.userId, current);
+    }
+    return [...users.values()]
+      .sort((left, right) => right.checkIns - left.checkIns || left.fullname.localeCompare(right.fullname))
+      .slice(0, 10);
   }
 
   async getCurrentAdmin(accessToken) {

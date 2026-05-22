@@ -90,7 +90,7 @@ export class OneSignalPushNotificationService {
       const response = await fetch(this.apiUrl, {
         method: 'POST',
         headers: {
-          Authorization: `Key ${this.apiKey}`,
+          Authorization: `key ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

@@ -3,6 +3,7 @@ import { requireBearerToken } from '../../shared/auth/authorization.js';
 import {
   validateMenuItemCreate,
   validateMenuItemUpdate,
+  parseRestaurantAnalyticsQuery,
   validateRestaurantCreate,
   validateRestaurantUpdate,
 } from './restaurantValidators.js';
@@ -39,6 +40,31 @@ export function createRestaurantController({ getRestaurantServices, config }) {
       res.json(
         successResponse(
           await restaurantService.listRestaurants({ accessToken: requireBearerToken(req) }),
+        ),
+      );
+    },
+
+    async listRestaurantAnalytics(req, res) {
+      const { restaurantService } = await services();
+      res.json(
+        successResponse(
+          await restaurantService.listRestaurantAnalytics({
+            accessToken: requireBearerToken(req),
+            ...parseRestaurantAnalyticsQuery(req.query),
+          }),
+        ),
+      );
+    },
+
+    async getRestaurantAnalytics(req, res) {
+      const { restaurantService } = await services();
+      res.json(
+        successResponse(
+          await restaurantService.getRestaurantAnalytics({
+            accessToken: requireBearerToken(req),
+            restaurantId: req.params.restaurantId,
+            ...parseRestaurantAnalyticsQuery(req.query),
+          }),
         ),
       );
     },

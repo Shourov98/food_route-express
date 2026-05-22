@@ -72,14 +72,29 @@ function restaurantSummary(record) {
   return restaurantSearchItem(record);
 }
 
+const ANALYTICS_RANGE_DAYS = {
+  last_7_days: 7,
+  last_30_days: 30,
+  last_90_days: 90,
+};
+
+function analyticsWindow(range, now = new Date()) {
+  const start = new Date(now);
+  start.setUTCDate(start.getUTCDate() - (ANALYTICS_RANGE_DAYS[range] ?? 30) + 1);
+  start.setUTCHours(0, 0, 0, 0);
+  return { range, start, end: now };
+}
+
 export class RouteService {
   constructor({
     routeRepository,
+    checkinRepository = null,
     restaurantRepository,
     userRepository,
     identityProvider,
   }) {
     this.routeRepository = routeRepository;
+    this.checkinRepository = checkinRepository;
     this.restaurantRepository = restaurantRepository;
     this.userRepository = userRepository;
     this.identityProvider = identityProvider;
@@ -159,6 +174,40 @@ export class RouteService {
     const record = await this.getRouteOrError(routeId);
     const restaurants = await this.getRestaurantsByIds(record.restaurantIds);
     return this.toResponse(record, { restaurants });
+  }
+
+  async getRouteAnalytics({ accessToken, range }) {
+    await this.getCurrentAdmin(accessToken);
+    const window = analyticsWindow(range);
+    const [routes, checkins] = await Promise.all([
+      this.routeRepository.listAll(),
+      this.checkinRepository ? this.checkinRepository.listAll() : [],
+    ]);
+    const activeCheckins = checkins.filter(
+      (record) => window.start <= record.createdAt && record.createdAt <= window.end,
+    );
+    const items = routes.map((route) => {
+      const routeRestaurantIds = new Set(route.restaurantIds);
+      const coveredCheckins = activeCheckins.filter((record) => routeRestaurantIds.has(record.restaurantId));
+      return {
+        routeId: route.id,
+        routeName: route.routeName,
+        city: route.city,
+        status: route.status,
+        restaurantCount: route.restaurantIds.length,
+        coveredCheckIns: coveredCheckins.length,
+        coveredUniqueUsers: new Set(coveredCheckins.map((record) => record.userId)).size,
+        routeVisits: 0,
+      };
+    });
+    items.sort((left, right) => right.coveredCheckIns - left.coveredCheckIns || left.routeName.localeCompare(right.routeName));
+    return {
+      range: window.range,
+      from: window.start,
+      to: window.end,
+      routeVisitsTracked: false,
+      items,
+    };
   }
 
   async deleteRoute({ accessToken, routeId }) {

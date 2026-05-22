@@ -2,6 +2,7 @@ import { getFirebaseClients } from '../../infra/firebase.js';
 import { FirebaseIdentityProvider } from '../../infra/identityProvider.js';
 import { FirebaseImageStorage } from '../../shared/services/imageStorage.js';
 import { FirestoreUserRepository } from '../auth/authRepository.js';
+import { FirestoreCheckInRepository } from '../checkins/checkinRepository.js';
 import { FirestoreMenuItemRepository, FirestoreMenuRepository } from '../menus/menuRepository.js';
 import { MenuService } from '../menus/menuService.js';
 import { FirestoreRestaurantRepository } from './restaurantRepository.js';
@@ -34,6 +35,7 @@ export function getRestaurantServices(config) {
       return {
         restaurantService: new RestaurantService({
           restaurantRepository,
+          checkinRepository: new FirestoreCheckInRepository(firestore),
           menuService,
           userRepository,
           identityProvider,

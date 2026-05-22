@@ -10,6 +10,7 @@ export function createAdminRouteRouter(config) {
 
   router.post('/', asyncHandler(controller.createRoute));
   router.get('/restaurants/search', asyncHandler(controller.searchRestaurants));
+  router.get('/analytics', asyncHandler(controller.getAnalytics));
   router.get('/', asyncHandler(controller.listRoutes));
   router.get('/:routeId', asyncHandler(controller.getRoute));
   router.patch('/:routeId', asyncHandler(controller.updateRoute));

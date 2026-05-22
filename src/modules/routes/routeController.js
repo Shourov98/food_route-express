@@ -3,6 +3,7 @@ import { requireBearerToken } from '../../shared/auth/authorization.js';
 import { parsePagination } from '../../shared/pagination.js';
 import {
   parseRouteFilters,
+  parseRouteAnalyticsQuery,
   parseRouteRestaurantSearch,
   validateRouteCreate,
   validateRouteUpdate,
@@ -28,6 +29,13 @@ export function createRouteController({ getRouteService, config }) {
         page,
         pageSize,
         ...parseRouteFilters(req.query),
+      });
+      res.json(successResponse(data));
+    },
+    async getAnalytics(req, res) {
+      const data = await (await service()).getRouteAnalytics({
+        accessToken: requireBearerToken(req),
+        ...parseRouteAnalyticsQuery(req.query),
       });
       res.json(successResponse(data));
     },

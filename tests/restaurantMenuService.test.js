@@ -85,6 +85,16 @@ class FakeMenuItemRepository {
   }
 }
 
+class FakeCheckInRepository {
+  constructor(records = []) {
+    this.records = records;
+  }
+
+  async listAll() {
+    return this.records;
+  }
+}
+
 class FakeIdentityProvider {
   async verifyIdToken(token) {
     return { uid: token };
@@ -113,7 +123,7 @@ function makeUser(overrides = {}) {
   };
 }
 
-function createServices() {
+function createServices({ checkins = [] } = {}) {
   const userRepository = new FakeUserRepository([
     makeUser(),
     makeUser({ uid: 'user-1', role: 'user', email: 'user@example.com' }),
@@ -134,6 +144,7 @@ function createServices() {
   });
   const restaurantService = new RestaurantService({
     restaurantRepository,
+    checkinRepository: new FakeCheckInRepository(checkins),
     menuService,
     userRepository,
     identityProvider,
@@ -249,4 +260,70 @@ test('MenuService creates and updates menu items', async () => {
   assert.equal(created.price, 12.5);
   assert.equal(updated.description, 'Iced milk coffee');
   assert.equal(updated.isAvailable, false);
+});
+
+test('RestaurantService builds check-in based analytics for a restaurant', async () => {
+  const createdAt = (value) => new Date(value);
+  const { restaurantService, restaurantRepository } = createServices({
+    checkins: [
+      {
+        id: 'checkin-1',
+        userId: 'user-1',
+        userFullname: 'Jane',
+        userEmail: 'jane@example.com',
+        restaurantId: 'restaurant-1',
+        awardedPoints: 20,
+        createdAt: createdAt('2026-05-20T08:00:00.000Z'),
+      },
+      {
+        id: 'checkin-2',
+        userId: 'user-1',
+        userFullname: 'Jane',
+        userEmail: 'jane@example.com',
+        restaurantId: 'restaurant-1',
+        awardedPoints: 20,
+        createdAt: createdAt('2026-05-21T18:00:00.000Z'),
+      },
+      {
+        id: 'checkin-3',
+        userId: 'user-2',
+        userFullname: 'John',
+        userEmail: 'john@example.com',
+        restaurantId: 'restaurant-1',
+        awardedPoints: 10,
+        createdAt: createdAt('2026-05-21T19:00:00.000Z'),
+      },
+    ],
+  });
+  await restaurantRepository.create({
+    id: 'restaurant-1',
+    name: 'Cafe Analytics',
+    address: '123 Main Street',
+    city: 'Dhaka',
+    latitude: 23.7,
+    longitude: 90.4,
+    category: 'Cafe',
+    imageUrl: null,
+    qrCode: { name: 'Cafe QR', location: { latitude: 23.7, longitude: 90.4 }, token: 'token-1' },
+    pointsPerCheckIn: 20,
+    enabledPackages: ['prime'],
+    status: 'active',
+    createdBy: 'admin-1',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const result = await restaurantService.getRestaurantAnalytics({
+    accessToken: 'admin-1',
+    restaurantId: 'restaurant-1',
+    range: 'last_30_days',
+  });
+
+  assert.equal(result.kpis.totalCheckIns, 3);
+  assert.equal(result.kpis.uniqueVisitors, 2);
+  assert.equal(result.kpis.repeatVisitRate, 50);
+  assert.equal(result.loyalty.returningCustomers, 1);
+  assert.equal(result.topUsers[0].userId, 'user-1');
+  assert.equal(result.visitBreakdown.some((item) => item.checkIns === 2), true);
+  assert.equal(result.routeTrafficTracked, false);
 });

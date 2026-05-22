@@ -159,6 +159,10 @@ Payload notes:
 - `Points` are the spendable balance used for redemptions and admin adjustments
 - `GET /api/v1/users/leaderboard` expects `scope=local|national`, `period=weekly|monthly`, and `Authorization: Bearer <access_token>`
 - `POST /api/v1/check-ins/scan` accepts the same `qrToken` field as before, but new QR codes now encode a JSON payload with restaurant identity and location, and repeated same-restaurant same-day scans return success with the message `Checkin awarded with points already.`
+- `GET /api/v1/restaurants/nearby` sorts results by minimum distance when both `latitude` and `longitude` are present. Without coordinates it falls back to the explicit `city` query or the authenticated user's saved city.
+- `GET /api/v1/admin/restaurants/analytics/summary` lists check-in based analytics summaries for the dashboard restaurant table and accepts `range=last_7_days|last_30_days|last_90_days`.
+- `GET /api/v1/admin/restaurants/{restaurant_id}/analytics` returns chart-ready check-in analytics for one restaurant. Route traffic fields remain zero until route visit events are tracked.
+- `GET /api/v1/admin/routes/analytics` reports per-route check-in coverage for restaurants in each route. Route visit counts remain zero until route visit events are tracked.
 - `GET /api/v1/restaurants` expects `page`, `pageSize`, optional `search`, optional `city`, optional `latitude`, optional `longitude`, and `Authorization: Bearer <access_token>`
 - `GET /api/v1/restaurants/featured` expects `page`, `pageSize`, optional `search`, optional `city`, optional `latitude`, optional `longitude`, and `Authorization: Bearer <access_token>`
 - Both user restaurant list endpoints return `latitude` and `longitude` on each restaurant item.

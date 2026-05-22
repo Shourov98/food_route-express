@@ -472,6 +472,18 @@ export const endpointCatalog = {
       },
     }),
   },
+  'GET /api/v1/admin/restaurants/analytics/summary': {
+    description: 'List check-in based analytics summaries for restaurants.',
+    parameters: makeQueryParameters([
+      stringParam('range', 'Analytics range: last_7_days, last_30_days, or last_90_days.'),
+    ]),
+  },
+  'GET /api/v1/admin/restaurants/{restaurant_id}/analytics': {
+    description: 'Get chart-ready check-in based analytics for one restaurant.',
+    parameters: makeQueryParameters([
+      stringParam('range', 'Analytics range: last_7_days, last_30_days, or last_90_days.'),
+    ]),
+  },
   'POST /api/v1/admin/restaurants/{restaurant_id}/menu/items': {
     requestBody: makeMultipartRequestBody({
       description: 'Create a menu item.',
@@ -661,6 +673,18 @@ export const endpointCatalog = {
       stringParam('city', 'Optional city filter.'),
       numberParam('latitude', 'Optional latitude.'),
       numberParam('longitude', 'Optional longitude.'),
+    ]),
+  },
+  'GET /api/v1/restaurants/nearby': {
+    description:
+      'List nearby restaurants sorted by distance when latitude and longitude are supplied. Without coordinates, results fall back to the requested city or the authenticated user city.',
+    parameters: makeQueryParameters([
+      integerParam('page', 'Page number.', true),
+      integerParam('pageSize', 'Page size.', true),
+      stringParam('search', 'Optional search term.'),
+      stringParam('city', 'Optional city override used for filtering or location fallback.'),
+      numberParam('latitude', 'Optional current user latitude.'),
+      numberParam('longitude', 'Optional current user longitude.'),
     ]),
   },
   'GET /api/v1/restaurants/{restaurant_id}': {
@@ -1129,6 +1153,12 @@ export const endpointCatalog = {
         status: stringProperty('Optional route status.'),
       },
     }),
+  },
+  'GET /api/v1/admin/routes/analytics': {
+    description: 'List route analytics derived from check-ins at route restaurants. Route visit events are not tracked yet.',
+    parameters: makeQueryParameters([
+      stringParam('range', 'Analytics range: last_7_days, last_30_days, or last_90_days.'),
+    ]),
   },
   'PATCH /api/v1/admin/routes/{route_id}': {
     requestBody: makeJsonRequestBody({

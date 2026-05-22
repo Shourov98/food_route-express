@@ -41,6 +41,10 @@ function parseNumber(value) {
   return number;
 }
 
+function hasLocation(latitude, longitude) {
+  return latitude !== null && longitude !== null;
+}
+
 function supportsFeature(record, featureKey) {
   const matrix = {
     featuredListing: new Set(['pro', 'prime', 'dominio']),
@@ -139,10 +143,11 @@ export class RestaurantDiscoveryService {
   async listNearbyRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude }) {
     const user = await this.getCurrentUser(accessToken);
     const favoriteIds = await this.favoriteIds(user.uid);
+    const effectiveCity = city || (hasLocation(latitude, longitude) ? null : user.city || null);
     let records = (await this.restaurantRepository.listAll()).filter(
       (record) => record.status === 'active' && supportsFeature(record, 'proximityAlerts'),
     );
-    records = this.filterRestaurants(records, { search, city });
+    records = this.filterRestaurants(records, { search, city: effectiveCity });
     return this.buildListResponse({ records, page, pageSize, latitude, longitude, favoriteIds });
   }
 

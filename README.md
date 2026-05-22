@@ -166,6 +166,41 @@ Copy `.env.example` to `.env` and set:
 - `API_V1_PREFIX` if the API prefix changes
 - Firebase and auth settings matching the FastAPI backend
 
+### OneSignal push
+
+The notification campaign and proximity-alert flows use the push provider configured by the
+backend. To send mobile pushes through OneSignal, set these backend-only values:
+
+```dotenv
+PUSH_NOTIFICATION_PROVIDER=onesignal
+ONESIGNAL_APP_ID=your-onesignal-app-id
+ONESIGNAL_REST_API_KEY=your-app-api-key
+ONESIGNAL_API_URL=https://api.onesignal.com/notifications
+```
+
+`ONESIGNAL_REST_API_KEY` is a server secret. Do not put it in dashboard or mobile app code.
+The mobile app should initialize the OneSignal SDK with the public app ID, request push
+permission, then register the current OneSignal subscription ID after user login:
+
+```http
+POST /api/v1/users/me/push-token
+Authorization: Bearer <user access token>
+Content-Type: application/json
+
+{
+  "pushToken": "<onesignal subscription id>",
+  "provider": "onesignal",
+  "platform": "android"
+}
+```
+
+Use `platform: "ios"` for iPhone subscriptions. Campaigns sent from the admin dashboard
+currently dispatch immediately for all users, new users, city, or age-group audiences that
+have a registered subscription ID. Proximity pushes are created by the server proximity
+scan flow after the user enables proximity alerts and their location is submitted to
+`POST /api/v1/users/me/proximity-scan`, or after an internal proximity scan uses stored
+last-known coordinates.
+
 ## Development
 
 ```bash

@@ -136,3 +136,11 @@ export function parseRouteRestaurantSearch(query) {
     search: query.search ?? null,
   };
 }
+
+export function parseRouteAnalyticsQuery(query) {
+  const range = String(query.range ?? 'last_30_days').toLowerCase();
+  if (!new Set(['last_7_days', 'last_30_days', 'last_90_days']).has(range)) {
+    throw validationError("Query parameter 'range' is invalid.");
+  }
+  return { range };
+}
