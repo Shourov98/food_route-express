@@ -1110,14 +1110,14 @@ export const endpointCatalog = {
   'POST /api/v1/users/me/push-token': {
     requestBody: makeJsonRequestBody({
       description:
-        'Register the current user push token or OneSignal subscription id used for push delivery.',
+        'Register the current user push token. When using OneSignal, backend delivery can target external_id after the app calls OneSignal.login(userId).',
       required: ['pushToken'],
       properties: {
         pushToken: stringProperty(
-          'Push notification token. When using OneSignal, send the OneSignal subscription id here.',
+          'Push notification token or optional OneSignal subscription id for diagnostics or fallback delivery.',
         ),
         subscriptionId: stringProperty(
-          'Optional alias for pushToken when using OneSignal subscription ids.',
+          'Optional alias for pushToken when sending a OneSignal subscription id.',
         ),
         platform: stringProperty('Optional platform, such as ios or android.'),
         provider: stringProperty('Optional provider label, such as onesignal or firebase.'),

@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 import process from 'node:process';
 
-function parseFirebaseConfig(value) {
+function parseJsonConfig(value) {
   if (!value) {
     return {};
   }
@@ -35,8 +35,32 @@ function parseList(value, fallback = ['*']) {
   return items.length > 0 ? items : fallback;
 }
 
+function getNestedValue(source, path) {
+  return path.reduce((current, key) => {
+    if (!current || typeof current !== 'object' || !(key in current)) {
+      return undefined;
+    }
+    return current[key];
+  }, source);
+}
+
+function resolveConfigValue({ envKey, runtimeConfig, runtimePath, fallback }) {
+  const envValue = process.env[envKey];
+  if (envValue !== undefined && envValue !== null && envValue !== '') {
+    return envValue;
+  }
+
+  const runtimeValue = getNestedValue(runtimeConfig, runtimePath);
+  if (runtimeValue !== undefined && runtimeValue !== null && runtimeValue !== '') {
+    return runtimeValue;
+  }
+
+  return fallback;
+}
+
 export function loadConfig() {
-  const firebaseRuntimeConfig = parseFirebaseConfig(process.env.FIREBASE_CONFIG);
+  const firebaseRuntimeConfig = parseJsonConfig(process.env.FIREBASE_CONFIG);
+  const cloudRuntimeConfig = parseJsonConfig(process.env.CLOUD_RUNTIME_CONFIG);
 
   return {
     port: Number(process.env.PORT ?? 5050),
@@ -75,10 +99,30 @@ export function loadConfig() {
     emailFromAddress: process.env.EMAIL_FROM_ADDRESS ?? '',
     emailReplyTo: process.env.EMAIL_REPLY_TO ?? '',
     adminDashboardLoginUrl: process.env.ADMIN_DASHBOARD_LOGIN_URL ?? '',
-    pushNotificationProvider: process.env.PUSH_NOTIFICATION_PROVIDER ?? 'firebase',
-    onesignalAppId: process.env.ONESIGNAL_APP_ID ?? '',
-    onesignalRestApiKey: process.env.ONESIGNAL_REST_API_KEY ?? '',
-    onesignalApiUrl: process.env.ONESIGNAL_API_URL ?? 'https://api.onesignal.com/notifications',
+    pushNotificationProvider: resolveConfigValue({
+      envKey: 'PUSH_NOTIFICATION_PROVIDER',
+      runtimeConfig: cloudRuntimeConfig,
+      runtimePath: ['push', 'provider'],
+      fallback: 'firebase',
+    }),
+    onesignalAppId: resolveConfigValue({
+      envKey: 'ONESIGNAL_APP_ID',
+      runtimeConfig: cloudRuntimeConfig,
+      runtimePath: ['onesignal', 'app_id'],
+      fallback: '',
+    }),
+    onesignalRestApiKey: resolveConfigValue({
+      envKey: 'ONESIGNAL_REST_API_KEY',
+      runtimeConfig: cloudRuntimeConfig,
+      runtimePath: ['onesignal', 'rest_api_key'],
+      fallback: '',
+    }),
+    onesignalApiUrl: resolveConfigValue({
+      envKey: 'ONESIGNAL_API_URL',
+      runtimeConfig: cloudRuntimeConfig,
+      runtimePath: ['onesignal', 'api_url'],
+      fallback: 'https://api.onesignal.com/notifications',
+    }),
     internalJobsSecret: process.env.INTERNAL_JOBS_SECRET ?? '',
     initialSuperAdminFullname: process.env.INITIAL_SUPER_ADMIN_FULLNAME ?? '',
     initialSuperAdminPhone: process.env.INITIAL_SUPER_ADMIN_PHONE ?? '',

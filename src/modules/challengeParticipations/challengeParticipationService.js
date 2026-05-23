@@ -60,6 +60,7 @@ export class ChallengeParticipationService {
     userRepository,
     identityProvider,
     xpService,
+    pushNotificationService = null,
   }) {
     this.challengeRepository = challengeRepository;
     this.participationRepository = participationRepository;
@@ -69,6 +70,7 @@ export class ChallengeParticipationService {
     this.userRepository = userRepository;
     this.identityProvider = identityProvider;
     this.xpService = xpService;
+    this.pushNotificationService = pushNotificationService;
   }
 
   async startChallenge({ accessToken, challengeId }) {
@@ -350,8 +352,9 @@ export class ChallengeParticipationService {
   }
 
   async finalizeParticipation({ record, user, challenge }) {
+    let challengeReward = null;
     if (challenge.rewardId) {
-      await this.grantChallengeReward({
+      challengeReward = await this.grantChallengeReward({
         userId: record.userId,
         rewardId: challenge.rewardId,
         sourceId: record.id,
@@ -369,7 +372,14 @@ export class ChallengeParticipationService {
       updatedAt: now,
       completedAt: record.completedAt ?? now,
     };
-    return this.storeParticipation(completedRecord);
+    const stored = await this.storeParticipation(completedRecord);
+    await this.sendChallengeCompletedPush({
+      user,
+      challenge,
+      participation: stored,
+      reward: challengeReward,
+    });
+    return stored;
   }
 
   async grantChallengeReward({ userId, rewardId, sourceId, city, country }) {
@@ -532,5 +542,36 @@ export class ChallengeParticipationService {
       });
     }
     return record;
+  }
+
+  async sendChallengeCompletedPush({ user, challenge, participation, reward }) {
+    if (!this.pushNotificationService) {
+      return;
+    }
+    if (
+      this.pushNotificationService.targetingMode !== 'external_id' &&
+      !user.pushNotificationToken
+    ) {
+      return;
+    }
+
+    const rewardSuffix = reward ? ` and unlocked ${reward.rewardTitle}` : '';
+
+    try {
+      await this.pushNotificationService.send({
+        recipientId: user.uid,
+        token: user.pushNotificationToken,
+        title: 'Challenge completed',
+        body: `You completed ${challenge.title} and earned ${participation.rewardPoints} points${rewardSuffix}.`,
+        data: {
+          type: 'challenge_completed',
+          challengeId: challenge.id,
+          participationId: participation.id,
+          rewardId: reward?.rewardId ?? null,
+        },
+      });
+    } catch {
+      // Challenge completion should succeed even if push delivery fails.
+    }
   }
 }

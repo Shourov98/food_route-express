@@ -1,5 +1,6 @@
 import { getFirebaseClients } from '../../infra/firebase.js';
 import { FirebaseIdentityProvider } from '../../infra/identityProvider.js';
+import { buildPushNotificationService } from '../../infra/pushNotificationServiceFactory.js';
 import { FirestoreUserRepository } from '../auth/authRepository.js';
 import { FirestoreRewardRepository } from '../rewards/rewardRepository.js';
 import { FirestorePointsLedgerRepository, FirestoreXpLedgerRepository } from '../xp/xpRepository.js';
@@ -11,7 +12,7 @@ let cachedServicePromise;
 
 export function getRewardRedemptionService(config) {
   if (!cachedServicePromise) {
-    cachedServicePromise = getFirebaseClients(config).then(({ auth, firestore }) => {
+    cachedServicePromise = getFirebaseClients(config).then(async ({ app, auth, firestore }) => {
       return new RewardRedemptionService({
         rewardRepository: new FirestoreRewardRepository(firestore),
         rewardRedemptionRepository: new FirestoreRewardRedemptionRepository(firestore),
@@ -21,6 +22,7 @@ export function getRewardRedemptionService(config) {
           xpRepository: new FirestoreXpLedgerRepository(firestore),
           pointsRepository: new FirestorePointsLedgerRepository(firestore),
         }),
+        pushNotificationService: await buildPushNotificationService({ config, app }),
       });
     });
   }

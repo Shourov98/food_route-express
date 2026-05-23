@@ -1,22 +1,27 @@
 import process from 'node:process';
 
 export class LoggingPushNotificationService {
+  constructor() {
+    this.targetingMode = 'token';
+  }
+
   async send(message) {
-    process.stdout.write(
-      `[push] token=${message.token} title=${message.title} body=${message.body}\n`,
-    );
+    const target = message.recipientId ? `recipientId=${message.recipientId}` : `token=${message.token}`;
+    process.stdout.write(`[push] ${target} title=${message.title} body=${message.body}\n`);
     return true;
   }
 
-  async sendBulk({ tokens, title, body }) {
-    const cleanTokens = [...new Set((tokens ?? []).filter(Boolean))];
-    for (const token of cleanTokens) {
-      process.stdout.write(`[push] token=${token} title=${title} body=${body}\n`);
+  async sendBulk({ tokens, recipientIds, title, body }) {
+    const mode = recipientIds?.length ? 'external_id' : 'token';
+    const targets = [...new Set(((mode === 'external_id' ? recipientIds : tokens) ?? []).filter(Boolean))];
+    for (const target of targets) {
+      const label = mode === 'external_id' ? `recipientId=${target}` : `token=${target}`;
+      process.stdout.write(`[push] ${label} title=${title} body=${body}\n`);
     }
     return {
-      success: cleanTokens.length > 0,
-      targetCount: cleanTokens.length,
-      sentCount: cleanTokens.length,
+      success: targets.length > 0,
+      targetCount: targets.length,
+      sentCount: targets.length,
     };
   }
 }
@@ -24,6 +29,7 @@ export class LoggingPushNotificationService {
 export class FirebasePushNotificationService {
   constructor({ messaging }) {
     this.messaging = messaging;
+    this.targetingMode = 'token';
   }
 
   async send({ token, title, body, data }) {
@@ -64,11 +70,13 @@ export class OneSignalPushNotificationService {
     this.appId = appId;
     this.apiKey = apiKey;
     this.apiUrl = apiUrl;
+    this.targetingMode = 'external_id';
   }
 
-  async send({ token, title, body, data }) {
+  async send({ token, recipientId, title, body, data }) {
     const result = await this.sendBulk({
       tokens: token ? [token] : [],
+      recipientIds: recipientId ? [recipientId] : [],
       title,
       body,
       data,
@@ -76,9 +84,13 @@ export class OneSignalPushNotificationService {
     return result.sentCount > 0;
   }
 
-  async sendBulk({ tokens, title, body, data, sendAfter = null }) {
+  async sendBulk({ tokens, recipientIds, title, body, data, sendAfter = null }) {
     const cleanTokens = [...new Set((tokens ?? []).filter(Boolean))];
-    if (cleanTokens.length === 0) {
+    const cleanRecipientIds = [...new Set((recipientIds ?? []).filter(Boolean))];
+    const useRecipientIds = cleanRecipientIds.length > 0;
+    const targetCount = useRecipientIds ? cleanRecipientIds.length : cleanTokens.length;
+
+    if (targetCount === 0) {
       return {
         success: false,
         targetCount: 0,
@@ -96,7 +108,8 @@ export class OneSignalPushNotificationService {
         body: JSON.stringify({
           app_id: this.appId,
           target_channel: 'push',
-          include_subscription_ids: cleanTokens,
+          include_aliases: useRecipientIds ? { external_id: cleanRecipientIds } : undefined,
+          include_subscription_ids: useRecipientIds ? undefined : cleanTokens,
           headings: { en: title },
           contents: { en: body },
           data: data || undefined,
@@ -111,21 +124,21 @@ export class OneSignalPushNotificationService {
         );
         return {
           success: false,
-          targetCount: cleanTokens.length,
+          targetCount,
           sentCount: 0,
         };
       }
 
       return {
         success: true,
-        targetCount: cleanTokens.length,
-        sentCount: cleanTokens.length,
+        targetCount,
+        sentCount: targetCount,
       };
     } catch (error) {
       process.stderr.write(`[push] Failed to send OneSignal notification: ${error.message}\n`);
       return {
         success: false,
-        targetCount: cleanTokens.length,
+        targetCount,
         sentCount: 0,
       };
     }

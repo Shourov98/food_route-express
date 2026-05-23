@@ -430,10 +430,17 @@ export class UserService {
   }
 
   async sendProximityPush({ user, record }) {
-    if (!this.pushNotificationService || !user.pushNotificationToken) {
+    if (!this.pushNotificationService) {
+      return false;
+    }
+    if (
+      this.pushNotificationService.targetingMode !== 'external_id' &&
+      !user.pushNotificationToken
+    ) {
       return false;
     }
     await this.pushNotificationService.send({
+      recipientId: user.uid,
       token: user.pushNotificationToken,
       title: `${record.restaurantName} is nearby`,
       body: `${record.restaurantName} is ${record.distanceKm.toFixed(1)} km away. Open directions to reach it.`,

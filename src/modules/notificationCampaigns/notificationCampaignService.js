@@ -330,14 +330,18 @@ export class NotificationCampaignService {
     }
 
     const recipients = await this.resolveCampaignRecipients(record);
-    const tokens = [...new Set(recipients.map((user) => user.pushNotificationToken).filter(Boolean))];
-    if (tokens.length === 0) {
+    const usesExternalIds = this.pushNotificationService.targetingMode === 'external_id';
+    const targets = usesExternalIds
+      ? [...new Set(recipients.map((user) => user.uid).filter(Boolean))]
+      : [...new Set(recipients.map((user) => user.pushNotificationToken).filter(Boolean))];
+    if (targets.length === 0) {
       return { targetCount: 0, sentCount: 0 };
     }
 
     if (typeof this.pushNotificationService.sendBulk === 'function') {
       const result = await this.pushNotificationService.sendBulk({
-        tokens,
+        tokens: usesExternalIds ? [] : targets,
+        recipientIds: usesExternalIds ? targets : [],
         title: record.campaignTitle,
         body: record.campaignBody,
         data: {
@@ -348,15 +352,16 @@ export class NotificationCampaignService {
         },
       });
       return {
-        targetCount: result.targetCount ?? tokens.length,
+        targetCount: result.targetCount ?? targets.length,
         sentCount: result.sentCount ?? 0,
       };
     }
 
     let sentCount = 0;
-    for (const token of tokens) {
+    for (const user of recipients) {
       const delivered = await this.pushNotificationService.send({
-        token,
+        token: user.pushNotificationToken,
+        recipientId: user.uid,
         title: record.campaignTitle,
         body: record.campaignBody,
         data: {
@@ -372,14 +377,19 @@ export class NotificationCampaignService {
     }
 
     return {
-      targetCount: tokens.length,
+      targetCount: targets.length,
       sentCount,
     };
   }
 
   async resolveCampaignRecipients(record) {
     const users = (await this.userRepository.listByRole('user')).filter(
-      (user) => user.isVerified && !user.isBlocked && user.pushNotificationToken,
+      (user) =>
+        user.isVerified &&
+        !user.isBlocked &&
+        (this.pushNotificationService?.targetingMode === 'external_id'
+          ? Boolean(user.uid)
+          : Boolean(user.pushNotificationToken)),
     );
 
     switch (record.targetAudience) {

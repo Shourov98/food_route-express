@@ -180,8 +180,29 @@ ONESIGNAL_API_URL=https://api.onesignal.com/notifications
 ```
 
 `ONESIGNAL_REST_API_KEY` is a server secret. Do not put it in dashboard or mobile app code.
+
+When deploying on Firebase Functions, the backend now also reads Firebase runtime config from
+`firebase functions:config:set`, so these values are equivalent:
+
+```bash
+firebase functions:config:set \
+  push.provider="onesignal" \
+  onesignal.app_id="YOUR_ONESIGNAL_APP_ID" \
+  onesignal.rest_api_key="YOUR_ONESIGNAL_REST_API_KEY" \
+  onesignal.api_url="https://api.onesignal.com/notifications"
+```
+
+After setting them, redeploy the function:
+
+```bash
+firebase deploy --only functions:api
+```
 The mobile app should initialize the OneSignal SDK with the public app ID, request push
-permission, then register the current OneSignal subscription ID after user login:
+permission, then call `OneSignal.login(userId)` after user login. Backend notifications are
+sent to that same user id through OneSignal `external_id` targeting.
+
+If you also want to store the current device subscription id for diagnostics or fallback flows,
+you can still register it with:
 
 ```http
 POST /api/v1/users/me/push-token
@@ -196,11 +217,12 @@ Content-Type: application/json
 ```
 
 Use `platform: "ios"` for iPhone subscriptions. Campaigns sent from the admin dashboard
-currently dispatch immediately for all users, new users, city, or age-group audiences that
-have a registered subscription ID. Proximity pushes are created by the server proximity
-scan flow after the user enables proximity alerts and their location is submitted to
-`POST /api/v1/users/me/proximity-scan`, or after an internal proximity scan uses stored
-last-known coordinates.
+currently dispatch immediately for all users, new users, city, or age-group audiences through
+that same OneSignal `external_id` mapping. Reward-claim and challenge-completion events also
+trigger automatic push notifications through the backend. Proximity pushes are created by the
+server proximity scan flow after the user enables proximity alerts and their location is
+submitted to `POST /api/v1/users/me/proximity-scan`, or after an internal proximity scan uses
+stored last-known coordinates.
 
 ## Development
 

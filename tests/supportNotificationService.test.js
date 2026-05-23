@@ -18,6 +18,9 @@ class FakeUserRepository {
   async getByUid(uid) {
     return this.users.get(uid) ?? null;
   }
+  async listByRole(role) {
+    return [...this.users.values()].filter((user) => user.role === role);
+  }
 }
 
 class FakeSupportRequestRepository {
@@ -123,6 +126,22 @@ class FakeProximityAlertRepository {
   }
 }
 
+class FakePushNotificationService {
+  constructor() {
+    this.targetingMode = 'external_id';
+    this.bulkMessages = [];
+  }
+
+  async sendBulk(payload) {
+    this.bulkMessages.push(payload);
+    return {
+      success: true,
+      targetCount: payload.recipientIds?.length ?? 0,
+      sentCount: payload.recipientIds?.length ?? 0,
+    };
+  }
+}
+
 function makeUser(overrides = {}) {
   return {
     uid: 'user-1',
@@ -168,10 +187,16 @@ test('SupportRequestService creates and lists support requests with FastAPI role
 
 test('NotificationCampaignService enforces schedule/status rules and filtering', async () => {
   const repository = new FakeCampaignRepository();
+  const pushNotificationService = new FakePushNotificationService();
   const service = new NotificationCampaignService({
     campaignRepository: repository,
-    userRepository: new FakeUserRepository([makeUser({ uid: 'admin-1', role: 'admin' })]),
+    userRepository: new FakeUserRepository([
+      makeUser(),
+      makeUser({ uid: 'admin-1', role: 'admin' }),
+      makeUser({ uid: 'user-2', city: 'Dhaka', createdAt: new Date('2026-05-20T00:00:00.000Z') }),
+    ]),
     identityProvider: new FakeIdentityProvider(),
+    pushNotificationService,
   });
 
   const scheduledAt = new Date(Date.now() + 86_400_000);
@@ -230,6 +255,25 @@ test('NotificationCampaignService enforces schedule/status rules and filtering',
     }),
     (error) => error.code === 'invalid_campaign_schedule' && error.statusCode === 400,
   );
+
+  const sendNow = await service.createCampaign({
+    accessToken: 'admin-1',
+    payload: {
+      campaignTitle: 'Send Now Promo',
+      campaignBody: 'Promo body',
+      campaignCategory: 'promotional',
+      targetAudience: 'all_users',
+      cityName: null,
+      ageGroup: null,
+      deliveryType: 'send_now',
+      scheduledAt: null,
+      status: null,
+      deliveryRate: 0,
+    },
+  });
+  assert.equal(sendNow.deliveryRate, 100);
+  assert.equal(pushNotificationService.bulkMessages.length, 1);
+  assert.deepEqual(pushNotificationService.bulkMessages[0].recipientIds.sort(), ['user-1', 'user-2']);
 });
 
 test('UserNotificationService aggregates activity, campaign, and read state', async () => {

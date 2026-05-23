@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { RewardService } from '../src/modules/rewards/rewardService.js';
 import { DailyRewardService } from '../src/modules/dailyRewards/dailyRewardService.js';
+import { RewardRedemptionService } from '../src/modules/rewardRedemptions/rewardRedemptionService.js';
 import { SpinService } from '../src/modules/spins/spinService.js';
 import { XpService } from '../src/modules/xp/xpService.js';
 
@@ -32,6 +33,19 @@ class FakeRewardRepository {
   }
   async listAll() {
     return [...this.records.values()];
+  }
+  async delete(id) {
+    return this.records.delete(id);
+  }
+}
+
+class FakeRewardRedemptionRepository {
+  constructor(records = []) {
+    this.records = new Map(records.map((record) => [record.id, record]));
+  }
+  async create(record) {
+    this.records.set(record.id, record);
+    return record;
   }
   async delete(id) {
     return this.records.delete(id);
@@ -117,6 +131,40 @@ class FakePointsRepository {
 class FakeXpRepository {
   async listByUser() {
     return [];
+  }
+}
+
+class FakeRewardXpService {
+  constructor(totalPoints = 0) {
+    this.totalPoints = totalPoints;
+    this.adjustments = [];
+  }
+
+  async getTotalPoints() {
+    return this.totalPoints;
+  }
+
+  async getTotalXp() {
+    return 0;
+  }
+
+  async adjustPoints({ userId, delta, sourceId }) {
+    this.totalPoints += delta;
+    const record = { id: `${sourceId}:points`, userId, delta };
+    this.adjustments.push(record);
+    return record;
+  }
+}
+
+class FakePushNotificationService {
+  constructor() {
+    this.targetingMode = 'external_id';
+    this.messages = [];
+  }
+
+  async send(message) {
+    this.messages.push(message);
+    return true;
   }
 }
 
@@ -247,4 +295,50 @@ test('SpinService awards points and stores spin history', async () => {
   assert.equal(result.spin.rewardId, 'daily-1');
   assert.equal(result.remainingQuantityAvailable, 2);
   assert.equal(pointsRepository.records.length, 1);
+});
+
+test('RewardRedemptionService redeems reward and sends reward-claimed push', async () => {
+  const now = new Date();
+  const pushNotificationService = new FakePushNotificationService();
+  const xpService = new FakeRewardXpService(200);
+  const rewardRepository = new FakeRewardRepository([
+    {
+      id: 'reward-1',
+      title: '20% Off Coupon',
+      description: 'Discount reward',
+      rewardImageUrl: null,
+      rewardCategory: 'coupon',
+      pointsRequired: 100,
+      quantityAvailable: 5,
+      xpPoints: 0,
+      foodItemName: null,
+      discountPercentage: 20,
+      giftCardCode: null,
+      termsAndConditions: null,
+      imageUrl: null,
+      isActive: true,
+      hasExpiry: false,
+      expiresAt: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]);
+  const service = new RewardRedemptionService({
+    rewardRepository,
+    rewardRedemptionRepository: new FakeRewardRedemptionRepository(),
+    userRepository: new FakeUserRepository([makeUser({ uid: 'user-1', role: 'user' })]),
+    identityProvider: new FakeIdentityProvider(),
+    xpService,
+    pushNotificationService,
+  });
+
+  const result = await service.redeemReward({
+    accessToken: 'user-1',
+    rewardId: 'reward-1',
+  });
+
+  assert.equal(result.redemption.status, 'claimed');
+  assert.equal(pushNotificationService.messages.length, 1);
+  assert.equal(pushNotificationService.messages[0].recipientId, 'user-1');
+  assert.equal(pushNotificationService.messages[0].data.type, 'reward_claimed');
 });

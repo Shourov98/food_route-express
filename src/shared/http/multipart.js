@@ -7,6 +7,14 @@ function isMultipartRequest(req) {
   return contentType.startsWith('multipart/form-data');
 }
 
+function isPlainObject(value) {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 export function multipartSingle(fieldName, { maxFileBytes = 5 * 1024 * 1024 } = {}) {
   return (req, res, next) => {
     if (!isMultipartRequest(req)) {
@@ -36,10 +44,9 @@ export function multipartSingle(fieldName, { maxFileBytes = 5 * 1024 * 1024 } = 
     const finish = () => {
       if (settled) return;
       settled = true;
-      req.body = {
-        ...(req.body && typeof req.body === 'object' ? req.body : {}),
-        ...body,
-      };
+      req.body = isPlainObject(req.body)
+        ? { ...req.body, ...body }
+        : body;
       req.file = fileRecord;
       next();
     };
@@ -48,8 +55,23 @@ export function multipartSingle(fieldName, { maxFileBytes = 5 * 1024 * 1024 } = 
       body[name] = value;
     });
 
-    busboy.on('file', (name, file, info) => {
-      const { filename, encoding, mimeType } = info;
+    busboy.on('file', (name, file, infoOrFilename, encodingArg, mimeTypeArg) => {
+      const {
+        filename,
+        encoding,
+        mimeType,
+      } =
+        typeof infoOrFilename === 'object' && infoOrFilename !== null
+          ? {
+              filename: infoOrFilename.filename,
+              encoding: infoOrFilename.encoding,
+              mimeType: infoOrFilename.mimeType,
+            }
+          : {
+              filename: infoOrFilename,
+              encoding: encodingArg,
+              mimeType: mimeTypeArg,
+            };
       const chunks = [];
       let sizeBytes = 0;
 
@@ -103,6 +125,13 @@ export function multipartSingle(fieldName, { maxFileBytes = 5 * 1024 * 1024 } = 
             statusCode: 400,
           }),
         );
+        return;
+      }
+      finish();
+    });
+
+    busboy.on('finish', () => {
+      if (fileTooLarge || settled) {
         return;
       }
       finish();

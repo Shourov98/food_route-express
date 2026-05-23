@@ -128,6 +128,18 @@ class FakeXpService {
   }
 }
 
+class FakePushNotificationService {
+  constructor() {
+    this.targetingMode = 'external_id';
+    this.messages = [];
+  }
+
+  async send(message) {
+    this.messages.push(message);
+    return true;
+  }
+}
+
 function makeUser(overrides = {}) {
   return {
     uid: 'user-1',
@@ -223,6 +235,7 @@ test('ChallengeParticipationService starts, refreshes, completes, and grants rew
     updatedAt: now,
   };
   const checkinRepository = new FakeCheckInRepository([]);
+  const pushNotificationService = new FakePushNotificationService();
   const service = new ChallengeParticipationService({
     challengeRepository: new FakeChallengeRepository([challenge]),
     participationRepository: new FakeParticipationRepository(),
@@ -232,6 +245,7 @@ test('ChallengeParticipationService starts, refreshes, completes, and grants rew
     userRepository: new FakeUserRepository([makeUser(), makeUser({ uid: 'admin-1', role: 'admin' })]),
     identityProvider: new FakeIdentityProvider(),
     xpService: new FakeXpService(),
+    pushNotificationService,
   });
 
   const started = await service.startChallenge({
@@ -259,6 +273,9 @@ test('ChallengeParticipationService starts, refreshes, completes, and grants rew
   assert.equal(service.xpService.xp.length, 1);
   assert.equal(service.xpService.points.length, 1);
   assert.equal(service.rewardRedemptionRepository.records.size, 1);
+  assert.equal(pushNotificationService.messages.length, 1);
+  assert.equal(pushNotificationService.messages[0].recipientId, 'user-1');
+  assert.equal(pushNotificationService.messages[0].data.type, 'challenge_completed');
 
   const completed = await service.completeParticipation({
     accessToken: 'user-1',

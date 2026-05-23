@@ -1,5 +1,6 @@
 import { getFirebaseClients } from '../../infra/firebase.js';
 import { FirebaseIdentityProvider } from '../../infra/identityProvider.js';
+import { buildPushNotificationService } from '../../infra/pushNotificationServiceFactory.js';
 import { FirestoreUserRepository } from '../auth/authRepository.js';
 import { FirestoreCheckInRepository } from '../checkins/checkinRepository.js';
 import { FirestoreChallengeRepository } from '../challenges/challengeRepository.js';
@@ -61,6 +62,7 @@ export function getChallengeParticipationService(config) {
           xpRepository: new FirestoreXpLedgerRepository(firestore),
           pointsRepository: new FirestorePointsLedgerRepository(firestore),
         }),
+        pushNotificationService: await buildPushNotificationService({ config, app }),
       });
     });
   }

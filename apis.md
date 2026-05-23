@@ -252,6 +252,7 @@ Notification campaigns:
   - `scheduledAt` when `deliveryType` is `schedule_later`
 - `GET /api/v1/admin/notification-campaigns` supports `page`, `pageSize`, `search`, `status`, `campaignCategory`, `targetAudience`, `deliveryType`, `cityName`, `ageGroup`, `scheduledFrom`, `scheduledTo`, `minDeliveryRate`, `maxDeliveryRate`, `sortBy`, and `sortOrder`
 - `PATCH /api/v1/admin/notification-campaigns/{campaign_id}` supports the same payload shape as create, with fields optional
+- When `PUSH_NOTIFICATION_PROVIDER=onesignal`, campaign push delivery targets OneSignal `external_id = userId`, which matches mobile clients that call `OneSignal.login(userId)`
 
 Route management:
 
@@ -294,6 +295,7 @@ Challenge participation:
 - `GET /api/v1/users/me/challenges`
 - `GET /api/v1/users/me/challenges/{participation_id}`
 - `POST /api/v1/users/me/challenges/{participation_id}/complete`
+- When challenge criteria are satisfied, the backend auto-completes the challenge, grants points, grants the linked reward if configured, and sends a push notification
 
 - `POST /api/v1/users/me/challenges/{challenge_id}/start` expects no JSON body and requires `Authorization: Bearer <access_token>`
 - `GET /api/v1/users/me/challenges` expects `page`, `pageSize`, and `Authorization: Bearer <access_token>`

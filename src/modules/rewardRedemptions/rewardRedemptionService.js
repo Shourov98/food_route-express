@@ -35,12 +35,14 @@ export class RewardRedemptionService {
     userRepository,
     identityProvider,
     xpService,
+    pushNotificationService = null,
   }) {
     this.rewardRepository = rewardRepository;
     this.rewardRedemptionRepository = rewardRedemptionRepository;
     this.userRepository = userRepository;
     this.identityProvider = identityProvider;
     this.xpService = xpService;
+    this.pushNotificationService = pushNotificationService;
   }
 
   async redeemReward({ accessToken, rewardId }) {
@@ -112,6 +114,8 @@ export class RewardRedemptionService {
         statusCode: 500,
       });
     }
+
+    await this.sendRewardClaimedPush({ user, reward, redemption: created });
 
     return {
       redemption: redemptionData(created),
@@ -234,5 +238,33 @@ export class RewardRedemptionService {
       blockedErrorCode: 'user_blocked',
       blockedErrorMessage: 'The user account is blocked.',
     });
+  }
+
+  async sendRewardClaimedPush({ user, reward, redemption }) {
+    if (!this.pushNotificationService) {
+      return;
+    }
+    if (
+      this.pushNotificationService.targetingMode !== 'external_id' &&
+      !user.pushNotificationToken
+    ) {
+      return;
+    }
+
+    try {
+      await this.pushNotificationService.send({
+        recipientId: user.uid,
+        token: user.pushNotificationToken,
+        title: 'Reward claimed',
+        body: `You successfully claimed ${reward.title}.`,
+        data: {
+          type: 'reward_claimed',
+          rewardId: reward.id,
+          redemptionId: redemption.id,
+        },
+      });
+    } catch {
+      // Reward redemption should succeed even if push delivery fails.
+    }
   }
 }
