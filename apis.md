@@ -160,6 +160,7 @@ Payload notes:
 - `Points` are the spendable balance used for redemptions and admin adjustments
 - `GET /api/v1/users/leaderboard` expects `scope=local|national`, `period=weekly|monthly`, and `Authorization: Bearer <access_token>`
 - `POST /api/v1/check-ins/scan` expects `qrToken`, `latitude`, and `longitude`. The user must be within the configured check-in radius of the restaurant QR location, and can check in once per restaurant per UTC meal window per day: breakfast (`05:00-10:59`), lunch (`11:00-16:59`), and dinner (`17:00-22:59`).
+- When a user scans the wrong or invalid restaurant QR, `POST /api/v1/check-ins/scan` now returns clearer messages that explain whether the QR is unrecognized, does not match the restaurant, or the user is too far from the restaurant location.
 - `GET /api/v1/restaurants/nearby` sorts results by minimum distance when both `latitude` and `longitude` are present. Without coordinates it falls back to the explicit `city` query or the authenticated user's saved city.
 - `GET /api/v1/admin/restaurants/analytics/summary` lists check-in based analytics summaries for the dashboard restaurant table and accepts `range=last_7_days|last_30_days|last_90_days`.
 - `GET /api/v1/admin/restaurants/{restaurant_id}/analytics` returns chart-ready check-in analytics for one restaurant. Route traffic fields remain zero until route visit events are tracked.

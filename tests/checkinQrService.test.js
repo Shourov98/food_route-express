@@ -349,7 +349,50 @@ test('CheckInService rejects scans when the user is too far from the restaurant 
       latitude: 23.75,
       longitude: 90.45,
     }),
-    (error) => error.code === 'checkin_out_of_range',
+    (error) =>
+      error.code === 'checkin_out_of_range' &&
+      error.message ===
+        'You are too far from this restaurant to check in. Make sure you are at the restaurant and scanning its QR code.',
+  );
+});
+
+test('CheckInService returns a clear error when the QR payload does not match the restaurant', async () => {
+  const { service } = createService();
+
+  await assert.rejects(
+    service.scanQr({
+      accessToken: 'user-1',
+      qrToken: JSON.stringify({
+        type: 'restaurant_check_in',
+        token: 'token-1234',
+        restaurantName: 'Wrong Name',
+        latitude: 23.7,
+        longitude: 90.4,
+      }),
+      latitude: 23.7002,
+      longitude: 90.4002,
+    }),
+    (error) =>
+      error.code === 'restaurant_qr_mismatch' &&
+      error.message ===
+        'This QR code does not match this restaurant. Please scan the QR code displayed at the restaurant you are visiting.',
+  );
+});
+
+test('CheckInService returns a clear error when the QR code is not recognized', async () => {
+  const { service } = createService();
+
+  await assert.rejects(
+    service.scanQr({
+      accessToken: 'user-1',
+      qrToken: 'unknown-token',
+      latitude: 23.7002,
+      longitude: 90.4002,
+    }),
+    (error) =>
+      error.code === 'restaurant_qr_not_found' &&
+      error.message ===
+        'This QR code is not recognized. Please scan the restaurant check-in QR code again.',
   );
 });
 

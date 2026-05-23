@@ -81,13 +81,6 @@ export class CheckInService {
 
     const qrPayload = parseQrPayload(qrToken);
     const restaurant = await this.resolveRestaurant({ qrToken, qrPayload });
-    if (!restaurant) {
-      throw new ApplicationError({
-        code: 'restaurant_qr_not_found',
-        message: 'No restaurant found for the provided QR code.',
-        statusCode: 404,
-      });
-    }
     if (restaurant.status !== 'active') {
       throw new ApplicationError({
         code: 'restaurant_inactive',
@@ -197,28 +190,70 @@ export class CheckInService {
 
   async resolveRestaurant({ qrToken, qrPayload }) {
     if (!qrPayload) {
-      return this.restaurantRepository.getByQrToken(qrToken);
+      const restaurant = await this.restaurantRepository.getByQrToken(qrToken);
+      if (!restaurant) {
+        throw new ApplicationError({
+          code: 'restaurant_qr_not_found',
+          message:
+            'This QR code is not recognized. Please scan the restaurant check-in QR code again.',
+          statusCode: 404,
+        });
+      }
+      return restaurant;
     }
 
     const token = String(qrPayload.token || '').trim();
-    const restaurant = token ? await this.restaurantRepository.getByQrToken(token) : null;
+    if (!token) {
+      throw new ApplicationError({
+        code: 'restaurant_qr_invalid',
+        message:
+          'This QR code is invalid. Please scan the restaurant check-in QR code again.',
+        statusCode: 400,
+      });
+    }
+    const restaurant = await this.restaurantRepository.getByQrToken(token);
     if (!restaurant) {
-      return null;
+      throw new ApplicationError({
+        code: 'restaurant_qr_not_found',
+        message:
+          'This QR code is not recognized. Please scan the restaurant check-in QR code again.',
+        statusCode: 404,
+      });
     }
     if (qrPayload.restaurantName !== undefined && String(qrPayload.restaurantName).trim() !== restaurant.name) {
-      return null;
+      throw new ApplicationError({
+        code: 'restaurant_qr_mismatch',
+        message:
+          'This QR code does not match this restaurant. Please scan the QR code displayed at the restaurant you are visiting.',
+        statusCode: 400,
+      });
     }
     if (qrPayload.latitude !== undefined && qrPayload.longitude !== undefined) {
       const encodedLat = Number(qrPayload.latitude);
       const encodedLng = Number(qrPayload.longitude);
       if (Number.isNaN(encodedLat) || Number.isNaN(encodedLng)) {
-        return null;
+        throw new ApplicationError({
+          code: 'restaurant_qr_invalid',
+          message:
+            'This QR code is invalid. Please scan the restaurant check-in QR code again.',
+          statusCode: 400,
+        });
       }
       if (encodedLat !== Number(restaurant.qrCode.location.latitude)) {
-        return null;
+        throw new ApplicationError({
+          code: 'restaurant_qr_mismatch',
+          message:
+            'This QR code does not match this restaurant. Please scan the QR code displayed at the restaurant you are visiting.',
+          statusCode: 400,
+        });
       }
       if (encodedLng !== Number(restaurant.qrCode.location.longitude)) {
-        return null;
+        throw new ApplicationError({
+          code: 'restaurant_qr_mismatch',
+          message:
+            'This QR code does not match this restaurant. Please scan the QR code displayed at the restaurant you are visiting.',
+          statusCode: 400,
+        });
       }
     }
     return restaurant;
@@ -243,7 +278,8 @@ export class CheckInService {
     if (!Number.isFinite(distanceKm) || distanceKm > CHECKIN_MAX_DISTANCE_KM) {
       throw new ApplicationError({
         code: 'checkin_out_of_range',
-        message: 'You must be near the restaurant to check in.',
+        message:
+          'You are too far from this restaurant to check in. Make sure you are at the restaurant and scanning its QR code.',
         statusCode: 403,
       });
     }
