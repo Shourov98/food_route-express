@@ -297,4 +297,6 @@ Challenge participation:
 - `POST /api/v1/users/me/challenges/{challenge_id}/start` expects no JSON body and requires `Authorization: Bearer <access_token>`
 - `GET /api/v1/users/me/challenges` expects `page`, `pageSize`, and `Authorization: Bearer <access_token>`
 - `GET /api/v1/users/me/challenges/{participation_id}` expects `Authorization: Bearer <access_token>`
-- `POST /api/v1/users/me/challenges/{participation_id}/complete` expects no JSON body and requires `Authorization: Bearer <access_token>`
+- After a user starts a challenge, progress is recalculated from that user's check-ins within the challenge timespan, and the participation is automatically marked completed once all criteria are satisfied.
+- Challenge completion automatically grants both `rewardPoints` and the linked redeemable reward when `rewardId` is set.
+- `POST /api/v1/users/me/challenges/{participation_id}/complete` remains available as a compatibility endpoint, but automatic completion means it is no longer required in the normal flow.

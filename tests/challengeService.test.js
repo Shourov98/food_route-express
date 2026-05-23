@@ -254,6 +254,11 @@ test('ChallengeParticipationService starts, refreshes, completes, and grants rew
   });
   assert.equal(fetched.criteria[0].completed, true);
   assert.equal(fetched.progressPercent, 100);
+  assert.equal(fetched.status, 'completed');
+  assert.equal(fetched.completedAt instanceof Date, true);
+  assert.equal(service.xpService.xp.length, 1);
+  assert.equal(service.xpService.points.length, 1);
+  assert.equal(service.rewardRedemptionRepository.records.size, 1);
 
   const completed = await service.completeParticipation({
     accessToken: 'user-1',
@@ -261,4 +266,7 @@ test('ChallengeParticipationService starts, refreshes, completes, and grants rew
   });
   assert.equal(completed.status, 'completed');
   assert.equal(completed.completedAt instanceof Date, true);
+  assert.equal(service.xpService.xp.length, 1);
+  assert.equal(service.xpService.points.length, 1);
+  assert.equal(service.rewardRedemptionRepository.records.size, 1);
 });

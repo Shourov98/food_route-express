@@ -150,31 +150,12 @@ export class ChallengeParticipationService {
         statusCode: 409,
       });
     }
-
-    const challenge = await this.getChallengeOrError(refreshed.challengeId);
-    let rewardRedemption = null;
-    if (challenge.rewardId) {
-      rewardRedemption = await this.grantChallengeReward({
-        userId: refreshed.userId,
-        rewardId: challenge.rewardId,
-        sourceId: refreshed.id,
-        city: user.city || '',
-        country: user.country || '',
-      });
-    }
-    await this.awardCompletionXp(refreshed);
-
-    const now = new Date();
-    const completedRecord = {
-      ...refreshed,
-      status: 'completed',
-      criteria: refreshed.criteria,
-      progressPercent: 100,
-      updatedAt: now,
-      completedAt: now,
-    };
-    const stored = await this.storeParticipation(completedRecord);
-    return participationResponse(stored);
+    const completed = await this.finalizeParticipation({
+      record: refreshed,
+      user,
+      challenge: await this.getChallengeOrError(refreshed.challengeId),
+    });
+    return participationResponse(completed);
   }
 
   async listAvailableChallenges({ accessToken, page, pageSize, search = null }) {
@@ -191,10 +172,13 @@ export class ChallengeParticipationService {
     }
     const items = [];
     for (const challenge of records) {
-      const participation = await this.participationRepository.getByUserAndChallenge({
+      const existingParticipation = await this.participationRepository.getByUserAndChallenge({
         userId: user.uid,
         challengeId: challenge.id,
       });
+      const participation = existingParticipation
+        ? await this.refreshParticipation(existingParticipation)
+        : null;
       items.push({
         id: challenge.id,
         title: challenge.title,
@@ -272,6 +256,15 @@ export class ChallengeParticipationService {
       progressPercent: record.status === 'completed' ? 100 : progressPercent,
       updatedAt: new Date(),
     };
+    const user = await this.userRepository.getByUid(record.userId);
+    if (
+      user &&
+      updated.status !== 'completed' &&
+      this.isCompleted(updated)
+    ) {
+      const completed = await this.finalizeParticipation({ record: updated, user, challenge });
+      return participationResponse(completed);
+    }
     const stored = await this.storeParticipation(updated);
     return participationResponse(stored);
   }
@@ -354,6 +347,29 @@ export class ChallengeParticipationService {
         statusCode: 500,
       });
     }
+  }
+
+  async finalizeParticipation({ record, user, challenge }) {
+    if (challenge.rewardId) {
+      await this.grantChallengeReward({
+        userId: record.userId,
+        rewardId: challenge.rewardId,
+        sourceId: record.id,
+        city: user.city || '',
+        country: user.country || '',
+      });
+    }
+    await this.awardCompletionXp(record);
+
+    const now = new Date();
+    const completedRecord = {
+      ...record,
+      status: 'completed',
+      progressPercent: 100,
+      updatedAt: now,
+      completedAt: record.completedAt ?? now,
+    };
+    return this.storeParticipation(completedRecord);
   }
 
   async grantChallengeReward({ userId, rewardId, sourceId, city, country }) {
