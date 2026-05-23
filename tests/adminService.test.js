@@ -148,6 +148,37 @@ class FakeXpService {
   async listPointsRecords() {
     return this.records;
   }
+
+  async getPointsHistory({ userId, page, pageSize }) {
+    const records = this.records
+      .filter((record) => record.userId === userId)
+      .slice()
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+    let runningBalance = 0;
+    const withBalance = records.map((record, index) => {
+      runningBalance += record.pointsDelta;
+      return {
+        id: record.id ?? `points-${index + 1}`,
+        sourceType: record.sourceType,
+        sourceId: record.sourceId,
+        pointsDelta: record.pointsDelta,
+        balanceAfter: runningBalance,
+        createdAt: record.createdAt,
+      };
+    });
+    withBalance.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    const totalItems = withBalance.length;
+    const start = (page - 1) * pageSize;
+    return {
+      items: withBalance.slice(start, start + pageSize),
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.max(1, Math.ceil(totalItems / pageSize)),
+      },
+    };
+  }
 }
 
 class FakeRewardRedemptionRepository {
@@ -295,6 +326,52 @@ test('AdminService adjusts user points', async () => {
   });
 
   assert.equal(result.currentPoints, 75);
+});
+
+test('AdminService lists paginated user points history with increases and decreases', async () => {
+  const { service, xpService } = createService();
+  xpService.records = [
+    {
+      id: 'points-1',
+      userId: 'user-1',
+      sourceType: 'check_in',
+      sourceId: 'check-1',
+      pointsDelta: 25,
+      createdAt: new Date('2026-05-24T08:00:00.000Z'),
+    },
+    {
+      id: 'points-2',
+      userId: 'user-1',
+      sourceType: 'admin_adjustment',
+      sourceId: 'adjustment-1',
+      pointsDelta: -10,
+      createdAt: new Date('2026-05-24T09:00:00.000Z'),
+    },
+    {
+      id: 'points-3',
+      userId: 'user-1',
+      sourceType: 'spin_reward',
+      sourceId: 'spin-1',
+      pointsDelta: 50,
+      createdAt: new Date('2026-05-24T10:00:00.000Z'),
+    },
+  ];
+
+  const result = await service.listUserPointsHistory({
+    accessToken: 'super-1',
+    userId: 'user-1',
+    page: 1,
+    pageSize: 2,
+  });
+
+  assert.equal(result.items.length, 2);
+  assert.equal(result.items[0].id, 'points-3');
+  assert.equal(result.items[0].pointsDelta, 50);
+  assert.equal(result.items[0].balanceAfter, 65);
+  assert.equal(result.items[1].id, 'points-2');
+  assert.equal(result.items[1].pointsDelta, -10);
+  assert.equal(result.items[1].balanceAfter, 15);
+  assert.equal(result.pagination.totalItems, 3);
 });
 
 test('AdminService uploads profile image', async () => {

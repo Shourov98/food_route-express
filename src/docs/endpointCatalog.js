@@ -588,6 +588,13 @@ export const endpointCatalog = {
       integerParam('pageSize', 'Page size.', true),
     ]),
   },
+  'GET /api/v1/admin/users/{user_id}/points-history': {
+    description: 'Get paginated points ledger history for one end user, including positive and negative deltas.',
+    parameters: makeQueryParameters([
+      integerParam('page', 'Page number.', true),
+      integerParam('pageSize', 'Page size.', true),
+    ]),
+  },
   'GET /api/v1/admin/qr-codes': {},
   'GET /api/v1/admin/qr-codes/{restaurant_id}': {},
   'GET /api/v1/admin/qr-codes/{restaurant_id}/image': {},

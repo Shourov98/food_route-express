@@ -34,6 +34,7 @@ export function createAdminRouter(config) {
   router.get('/users/blocked', asyncHandler(controller.listBlockedUsers));
   router.get('/users/:userId', asyncHandler(controller.getUser));
   router.get('/users/:userId/checkins', asyncHandler(controller.listUserCheckins));
+  router.get('/users/:userId/points-history', asyncHandler(controller.listUserPointsHistory));
   router.patch('/users/:userId/points', asyncHandler(controller.adjustUserPoints));
   router.post('/users/:userId/block', asyncHandler(controller.blockUser));
   router.post('/users/:userId/unblock', asyncHandler(controller.unblockUser));

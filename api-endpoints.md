@@ -143,6 +143,7 @@ Total unique endpoints: 169
 
 - GET /api/v1/admin/users
 - GET /api/v1/admin/users/{userId}
+- GET /api/v1/admin/users/{userId}/points-history
 - POST /api/v1/admin/users/{userId}/block
 - PATCH /api/v1/admin/users/{userId}/points
 - POST /api/v1/admin/users/{userId}/unblock

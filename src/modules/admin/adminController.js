@@ -168,6 +168,16 @@ export function createAdminController({ getAdminService, config }) {
       });
       res.json(successResponse(data));
     },
+    async listUserPointsHistory(req, res) {
+      const { page, pageSize } = parsePagination(req.query);
+      const data = await (await service()).listUserPointsHistory({
+        accessToken: requireBearerToken(req),
+        userId: req.params.userId,
+        page,
+        pageSize,
+      });
+      res.json(successResponse(data));
+    },
     async adjustUserPoints(req, res) {
       const data = await (await service()).adjustUserPoints({
         accessToken: requireBearerToken(req),

@@ -103,6 +103,40 @@ export class XpService {
     };
   }
 
+  async getPointsHistory({ userId, page, pageSize }) {
+    const records = (await this.pointsRepository.listByUser(userId))
+      .slice()
+      .sort((left, right) => {
+        const timeDiff = left.createdAt.getTime() - right.createdAt.getTime();
+        return timeDiff !== 0 ? timeDiff : left.id.localeCompare(right.id);
+      });
+
+    let runningBalance = 0;
+    const withBalance = records.map((record) => {
+      runningBalance += record.pointsDelta;
+      return {
+        id: record.id,
+        sourceType: record.sourceType,
+        sourceId: record.sourceId,
+        pointsDelta: record.pointsDelta,
+        balanceAfter: runningBalance,
+        createdAt: record.createdAt,
+      };
+    });
+
+    withBalance.sort((left, right) => {
+      const timeDiff = right.createdAt.getTime() - left.createdAt.getTime();
+      return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+    });
+
+    const totalItems = withBalance.length;
+    const start = (page - 1) * pageSize;
+    return {
+      items: withBalance.slice(start, start + pageSize),
+      pagination: buildPaginationMeta({ page, pageSize, totalItems }),
+    };
+  }
+
   async awardXp({ userId, delta, sourceType, sourceId, city, country }) {
     if (delta <= 0) {
       return null;

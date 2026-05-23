@@ -149,6 +149,7 @@ Payload notes:
 - `POST /api/v1/auth/register` expects `fullname`, `email`, `gender`, `age`, `country`, `city`, `password`
 - `PATCH /api/v1/users/me/image` expects `multipart/form-data` with `image`
 - `PATCH /api/v1/admin/users/{user_id}/points` expects `pointsDelta`
+- `GET /api/v1/admin/users/{user_id}/points-history` returns paginated points ledger entries, including increases and decreases
 - `GET /api/v1/admin/check-ins` returns paginated check-in history
 - `GET /api/v1/check-ins/history` returns paginated user check-in history
 - `GET /api/v1/users/me/xp-history` returns paginated XP ledger entries

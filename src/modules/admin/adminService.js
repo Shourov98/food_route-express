@@ -450,6 +450,19 @@ export class AdminService {
     };
   }
 
+  async listUserPointsHistory({ accessToken, userId, page, pageSize }) {
+    await this.getCurrentAdmin(accessToken);
+    const user = await this.getUserByUid(userId);
+    if (user.role !== 'user') {
+      throw new ApplicationError({
+        code: 'invalid_user_role',
+        message: 'Only end users have points history in this view.',
+        statusCode: 400,
+      });
+    }
+    return this.xpService.getPointsHistory({ userId: user.uid, page, pageSize });
+  }
+
   async adjustUserPoints({ accessToken, userId, payload }) {
     const admin = await this.getCurrentAdmin(accessToken);
     const user = await this.getUserByUid(userId);

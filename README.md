@@ -48,6 +48,7 @@ Native Express implementation started:
 - `GET /api/v1/admin/users`
 - `GET /api/v1/admin/users/blocked`
 - `GET /api/v1/admin/users/{user_id}`
+- `GET /api/v1/admin/users/{user_id}/points-history`
 - `PATCH /api/v1/admin/users/{user_id}/points`
 - `POST /api/v1/admin/users/{user_id}/block`
 - `POST /api/v1/admin/users/{user_id}/unblock`
