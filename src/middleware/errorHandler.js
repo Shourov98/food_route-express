@@ -42,13 +42,24 @@ export function errorHandler(err, req, res, next) {
   }
 
   const requestId = req.requestId;
-  const statusCode = Number.isInteger(err?.statusCode) ? err.statusCode : 500;
-  const code = err?.code ?? (statusCode >= 500 ? 'internal_error' : 'http_error');
-  const message =
-    err?.message ??
-    (statusCode >= 500
-      ? 'Unexpected error occurred. Please contact support with requestId.'
-      : 'Request could not be processed.');
+  const isMalformedMultipart =
+    err?.message === 'Unexpected end of form' ||
+    err?.code === 'LIMIT_UNEXPECTED_FILE' ||
+    err?.name === 'MulterError';
+  const statusCode = isMalformedMultipart
+    ? 400
+    : Number.isInteger(err?.statusCode)
+      ? err.statusCode
+      : 500;
+  const code = isMalformedMultipart
+    ? 'invalid_multipart_form'
+    : err?.code ?? (statusCode >= 500 ? 'internal_error' : 'http_error');
+  const message = isMalformedMultipart
+    ? 'Image upload could not be processed. Please choose the restaurant image again and resubmit the form.'
+    : err?.message ??
+      (statusCode >= 500
+        ? 'Unexpected error occurred. Please contact support with requestId.'
+        : 'Request could not be processed.');
 
   const logPayload = {
     requestId,

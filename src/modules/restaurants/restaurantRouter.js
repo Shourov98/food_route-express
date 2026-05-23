@@ -1,17 +1,19 @@
 import { Router } from 'express';
-import multer from 'multer';
 
 import { asyncHandler } from '../../shared/http/asyncHandler.js';
+import { multipartSingle } from '../../shared/http/multipart.js';
 import { createRestaurantController } from './restaurantController.js';
 import { getRestaurantServices } from './restaurantDependencies.js';
 
 export function createRestaurantRouter(config) {
   const router = Router();
-  const upload = multer();
   const controller = createRestaurantController({ getRestaurantServices, config });
+  const uploadImage = multipartSingle('image', {
+    maxFileBytes: config.imageUploadMaxBytes,
+  });
 
-  router.post('/', upload.single('image'), asyncHandler(controller.createRestaurant));
-  router.put('/:restaurantId', upload.single('image'), asyncHandler(controller.updateRestaurant));
+  router.post('/', uploadImage, asyncHandler(controller.createRestaurant));
+  router.put('/:restaurantId', uploadImage, asyncHandler(controller.updateRestaurant));
   router.get('/analytics/summary', asyncHandler(controller.listRestaurantAnalytics));
   router.get('/:restaurantId/analytics', asyncHandler(controller.getRestaurantAnalytics));
   router.get('/', asyncHandler(controller.listRestaurants));
@@ -21,12 +23,12 @@ export function createRestaurantRouter(config) {
   router.get('/:restaurantId/menu', asyncHandler(controller.getMenu));
   router.post(
     '/:restaurantId/menu/items',
-    upload.single('image'),
+    uploadImage,
     asyncHandler(controller.createMenuItem),
   );
   router.patch(
     '/:restaurantId/menu/items/:itemId',
-    upload.single('image'),
+    uploadImage,
     asyncHandler(controller.updateMenuItem),
   );
   router.get('/:restaurantId/menu/items', asyncHandler(controller.listMenuItems));
