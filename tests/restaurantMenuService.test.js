@@ -172,6 +172,8 @@ test('RestaurantService creates restaurant and default menu', async () => {
       latitude: 23.7,
       longitude: 90.4,
       category: 'Cafe',
+      openingTime: '08:00',
+      closingTime: '22:00',
       qrCode: {
         name: 'Cafe One QR',
         location: { latitude: 23.7, longitude: 90.4 },
@@ -185,6 +187,8 @@ test('RestaurantService creates restaurant and default menu', async () => {
   assert.equal(result.status, 'inactive');
   assert.equal(result.enabledPackages.length, 0);
   assert.equal(result.imageUrl.includes('cover.png'), true);
+  assert.equal(result.openingTime, '08:00');
+  assert.equal(result.closingTime, '22:00');
   assert.equal((await menuRepository.getByRestaurantId(result.id)).name, 'Cafe One Menu');
 });
 
@@ -198,6 +202,8 @@ test('RestaurantService lists restaurants for active user accounts', async () =>
     latitude: 23.7,
     longitude: 90.4,
     category: 'Cafe',
+    openingTime: '08:00',
+    closingTime: '22:00',
     imageUrl: 'https://cdn.example.com/r.png',
     qrCode: { name: 'Cafe QR', location: { latitude: 23.7, longitude: 90.4 }, token: 'token-1' },
     pointsPerCheckIn: 20,
@@ -223,6 +229,8 @@ test('MenuService creates and updates menu items', async () => {
     latitude: 23.7,
     longitude: 90.4,
     category: 'Cafe',
+    openingTime: '08:00',
+    closingTime: '22:00',
     imageUrl: 'https://cdn.example.com/r.png',
     qrCode: { name: 'Cafe QR', location: { latitude: 23.7, longitude: 90.4 }, token: 'token-1' },
     pointsPerCheckIn: 20,

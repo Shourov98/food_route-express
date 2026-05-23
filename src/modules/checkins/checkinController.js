@@ -10,9 +10,12 @@ export function createCheckInController({ getCheckInService, config }) {
 
   return {
     async scan(req, res) {
+      const payload = validateCheckInScan(req.body);
       const result = await (await service()).scanQr({
         accessToken: requireBearerToken(req),
-        qrToken: validateCheckInScan(req.body).qrToken,
+        qrToken: payload.qrToken,
+        latitude: payload.latitude,
+        longitude: payload.longitude,
       });
       res.status(201).json(successResponse(result.data, result.message));
     },

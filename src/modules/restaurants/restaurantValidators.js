@@ -37,6 +37,14 @@ function optionalString(body, field, { min = 0, max = Infinity } = {}) {
   return body[field];
 }
 
+function requiredTime(body, field) {
+  const value = requiredString(body, field, { min: 5, max: 5 });
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    throw validationError(`Field '${field}' should use HH:mm format.`);
+  }
+  return value;
+}
+
 function requiredNumber(body, field, { min = -Infinity, max = Infinity } = {}) {
   if (!hasOwn(body, field)) {
     throw validationError(`Field '${field}' is required.`);
@@ -107,6 +115,8 @@ export function validateRestaurantCreate(body, file) {
     latitude: requiredNumber(body, 'latitude'),
     longitude: requiredNumber(body, 'longitude'),
     category: requiredString(body, 'category', { min: 2, max: 60 }),
+    openingTime: requiredTime(body, 'openingTime'),
+    closingTime: requiredTime(body, 'closingTime'),
     imageUrl: null,
     qrCode: parseQrCode(body),
     pointsPerCheckIn: requiredInteger(body, 'pointsPerCheckIn', { min: 0, max: 10_000 }),
@@ -122,6 +132,8 @@ export function validateRestaurantUpdate(body) {
     latitude: requiredNumber(body, 'latitude'),
     longitude: requiredNumber(body, 'longitude'),
     category: requiredString(body, 'category', { min: 2, max: 60 }),
+    openingTime: requiredTime(body, 'openingTime'),
+    closingTime: requiredTime(body, 'closingTime'),
     imageUrl: optionalString(body, 'imageUrl') ?? null,
     qrCode: parseQrCode(body),
     pointsPerCheckIn: requiredInteger(body, 'pointsPerCheckIn', { min: 0, max: 10_000 }),

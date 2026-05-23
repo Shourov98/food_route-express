@@ -4431,7 +4431,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"qrToken\": \"sample_qrToken\"\n}",
+              "raw": "{\n  \"qrToken\": \"sample_qrToken\",\n  \"latitude\": 23.7002,\n  \"longitude\": 90.4002\n}",
               "options": {
                 "raw": {
                   "language": "json"

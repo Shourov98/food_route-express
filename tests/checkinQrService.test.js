@@ -128,6 +128,20 @@ function makeRestaurant(overrides = {}) {
   };
 }
 
+function makeRestaurantTwo(overrides = {}) {
+  return makeRestaurant({
+    id: 'restaurant-2',
+    name: 'Bistro Two',
+    address: '456 Side Street',
+    qrCode: {
+      name: 'Bistro QR',
+      token: 'token-5678',
+      location: { latitude: 23.8, longitude: 90.5 },
+    },
+    ...overrides,
+  });
+}
+
 function makeUser(overrides = {}) {
   return {
     uid: 'user-1',
@@ -142,7 +156,181 @@ function makeUser(overrides = {}) {
   };
 }
 
+function createService({
+  checkins = [],
+  restaurants = [makeRestaurant()],
+  now = new Date('2026-05-24T06:00:00.000Z'),
+  xpRepository = new FakeXpRepository(),
+  pointsRepository = new FakePointsRepository(),
+} = {}) {
+  return {
+    xpRepository,
+    pointsRepository,
+    repository: new FakeCheckInRepository(checkins),
+    service: new CheckInService({
+      checkinRepository: new FakeCheckInRepository(checkins),
+      restaurantRepository: new FakeRestaurantRepository(restaurants),
+      userRepository: new FakeUserRepository([makeUser()]),
+      identityProvider: new FakeIdentityProvider(),
+      xpService: new XpService({
+        xpRepository,
+        pointsRepository,
+      }),
+      nowProvider: () => now,
+    }),
+  };
+}
+
 test('CheckInService scans QR and awards XP/points', async () => {
+  const { service } = createService();
+
+  const result = await service.scanQr({
+    accessToken: 'user-1',
+    qrToken: JSON.stringify({
+      type: 'restaurant_check_in',
+      token: 'token-1234',
+      restaurantName: 'Cafe One',
+      latitude: 23.7,
+      longitude: 90.4,
+    }),
+    latitude: 23.7002,
+    longitude: 90.4002,
+  });
+
+  assert.equal(result.data.restaurantId, 'restaurant-1');
+  assert.equal(result.data.awardedXp, 25);
+  assert.equal(result.message, 'Check-in completed successfully.');
+});
+
+test('CheckInService rejects a duplicate same-day check-in in the same meal window at the same restaurant', async () => {
+  const now = new Date('2026-05-24T06:00:00.000Z');
+  const existingCheckin = {
+    id: 'check-1',
+    userId: 'user-1',
+    userFullname: 'Jane Doe',
+    userEmail: 'user@example.com',
+    restaurantId: 'restaurant-1',
+    restaurantName: 'Cafe One',
+    restaurantAddress: '123 Main Street',
+    qrToken: 'token-1234',
+    awardedXp: 25,
+    awardedPoints: 25,
+    createdAt: new Date('2026-05-24T05:30:00.000Z'),
+  };
+  const { service, xpRepository, pointsRepository } = createService({
+    checkins: [existingCheckin],
+    now,
+  });
+
+  await assert.rejects(
+    service.scanQr({
+      accessToken: 'user-1',
+      qrToken: 'token-1234',
+      latitude: 23.7002,
+      longitude: 90.4002,
+    }),
+    (error) => error.code === 'checkin_meal_window_limit_reached',
+  );
+  assert.equal(xpRepository.records.length, 0);
+  assert.equal(pointsRepository.records.length, 0);
+});
+
+test('CheckInService allows a same-day check-in at the same restaurant in a different meal window', async () => {
+  const existingCheckin = {
+    id: 'check-1',
+    userId: 'user-1',
+    userFullname: 'Jane Doe',
+    userEmail: 'user@example.com',
+    restaurantId: 'restaurant-1',
+    restaurantName: 'Cafe One',
+    restaurantAddress: '123 Main Street',
+    qrToken: 'token-1234',
+    awardedXp: 25,
+    awardedPoints: 25,
+    createdAt: new Date('2026-05-24T05:30:00.000Z'),
+  };
+  const checkins = [existingCheckin];
+  const xpRepository = new FakeXpRepository();
+  const pointsRepository = new FakePointsRepository();
+  const repository = new FakeCheckInRepository(checkins);
+  const service = new CheckInService({
+    checkinRepository: repository,
+    restaurantRepository: new FakeRestaurantRepository([makeRestaurant()]),
+    userRepository: new FakeUserRepository([makeUser()]),
+    identityProvider: new FakeIdentityProvider(),
+    xpService: new XpService({
+      xpRepository,
+      pointsRepository,
+    }),
+    nowProvider: () => new Date('2026-05-24T12:00:00.000Z'),
+  });
+
+  const result = await service.scanQr({
+    accessToken: 'user-1',
+    qrToken: 'token-1234',
+    latitude: 23.7002,
+    longitude: 90.4002,
+  });
+
+  assert.equal(result.message, 'Check-in completed successfully.');
+  assert.equal(repository.records.length, 2);
+  assert.equal(xpRepository.records.length, 1);
+  assert.equal(pointsRepository.records.length, 1);
+});
+
+test('CheckInService allows same-day check-ins across different restaurants in the same meal window', async () => {
+  const xpRepository = new FakeXpRepository();
+  const pointsRepository = new FakePointsRepository();
+  const repository = new FakeCheckInRepository();
+  const service = new CheckInService({
+    checkinRepository: repository,
+    restaurantRepository: new FakeRestaurantRepository([makeRestaurant(), makeRestaurantTwo()]),
+    userRepository: new FakeUserRepository([makeUser()]),
+    identityProvider: new FakeIdentityProvider(),
+    xpService: new XpService({
+      xpRepository,
+      pointsRepository,
+    }),
+    nowProvider: () => new Date('2026-05-24T12:00:00.000Z'),
+  });
+
+  const first = await service.scanQr({
+    accessToken: 'user-1',
+    qrToken: 'token-1234',
+    latitude: 23.7002,
+    longitude: 90.4002,
+  });
+  const second = await service.scanQr({
+    accessToken: 'user-1',
+    qrToken: 'token-5678',
+    latitude: 23.8002,
+    longitude: 90.5002,
+  });
+
+  assert.equal(first.data.restaurantId, 'restaurant-1');
+  assert.equal(second.data.restaurantId, 'restaurant-2');
+  assert.equal(repository.records.length, 2);
+  assert.equal(xpRepository.records.length, 2);
+  assert.equal(pointsRepository.records.length, 2);
+});
+
+test('CheckInService rejects scans outside breakfast, lunch, and dinner windows', async () => {
+  const { service } = createService({
+    now: new Date('2026-05-24T23:30:00.000Z'),
+  });
+
+  await assert.rejects(
+    service.scanQr({
+      accessToken: 'user-1',
+      qrToken: 'token-1234',
+      latitude: 23.7002,
+      longitude: 90.4002,
+    }),
+    (error) => error.code === 'checkin_outside_meal_window',
+  );
+});
+
+test('CheckInService rejects scans when the user is too far from the restaurant QR location', async () => {
   const service = new CheckInService({
     checkinRepository: new FakeCheckInRepository(),
     restaurantRepository: new FakeRestaurantRepository([makeRestaurant()]),
@@ -154,52 +342,15 @@ test('CheckInService scans QR and awards XP/points', async () => {
     }),
   });
 
-  const result = await service.scanQr({
-    accessToken: 'user-1',
-    qrToken: JSON.stringify({
-      type: 'restaurant_check_in',
-      token: 'token-1234',
-      restaurantName: 'Cafe One',
-      latitude: 23.7,
-      longitude: 90.4,
-    }),
-  });
-
-  assert.equal(result.data.restaurantId, 'restaurant-1');
-  assert.equal(result.data.awardedXp, 25);
-  assert.equal(result.message, 'Check-in completed successfully.');
-});
-
-test('CheckInService returns same-day same-restaurant success without duplicate award', async () => {
-  const repository = new FakeCheckInRepository([
-    {
-      id: 'check-1',
-      userId: 'user-1',
-      userFullname: 'Jane Doe',
-      userEmail: 'user@example.com',
-      restaurantId: 'restaurant-1',
-      restaurantName: 'Cafe One',
-      restaurantAddress: '123 Main Street',
+  await assert.rejects(
+    service.scanQr({
+      accessToken: 'user-1',
       qrToken: 'token-1234',
-      awardedXp: 25,
-      awardedPoints: 25,
-      createdAt: new Date(),
-    },
-  ]);
-
-  const service = new CheckInService({
-    checkinRepository: repository,
-    restaurantRepository: new FakeRestaurantRepository([makeRestaurant()]),
-    userRepository: new FakeUserRepository([makeUser()]),
-    identityProvider: new FakeIdentityProvider(),
-    xpService: new XpService({
-      xpRepository: new FakeXpRepository(),
-      pointsRepository: new FakePointsRepository(),
+      latitude: 23.75,
+      longitude: 90.45,
     }),
-  });
-
-  const result = await service.scanQr({ accessToken: 'user-1', qrToken: 'token-1234' });
-  assert.equal(result.message, 'Checkin awarded with points already.');
+    (error) => error.code === 'checkin_out_of_range',
+  );
 });
 
 test('QrCodeService returns QR details for admin', async () => {

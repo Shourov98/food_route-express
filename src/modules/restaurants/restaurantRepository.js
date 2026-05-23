@@ -37,6 +37,8 @@ function restaurantFromData(data = {}, fallbackId = 'unknown-restaurant') {
     latitude: Number(data.latitude ?? 0),
     longitude: Number(data.longitude ?? 0),
     category: String(data.category ?? 'restaurant'),
+    openingTime: data.openingTime ?? null,
+    closingTime: data.closingTime ?? null,
     imageUrl: data.imageUrl ?? null,
     qrCode: {
       name: String(qrCode.name ?? data.name ?? 'Unknown Restaurant'),

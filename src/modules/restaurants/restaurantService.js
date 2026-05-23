@@ -30,6 +30,8 @@ function restaurantResponse(record) {
     latitude: record.latitude,
     longitude: record.longitude,
     category: record.category,
+    openingTime: record.openingTime,
+    closingTime: record.closingTime,
     imageUrl: record.imageUrl,
     qrCode: record.qrCode,
     pointsPerCheckIn: record.pointsPerCheckIn,
@@ -131,6 +133,8 @@ export class RestaurantService {
       latitude: payload.latitude,
       longitude: payload.longitude,
       category: payload.category,
+      openingTime: payload.openingTime,
+      closingTime: payload.closingTime,
       imageUrl,
       qrCode: payload.qrCode,
       pointsPerCheckIn: payload.pointsPerCheckIn,
@@ -173,6 +177,8 @@ export class RestaurantService {
       latitude: payload.latitude,
       longitude: payload.longitude,
       category: payload.category,
+      openingTime: payload.openingTime,
+      closingTime: payload.closingTime,
       imageUrl: image
         ? (await this.imageStorage.uploadImage({ folder: `restaurants/${restaurantId}`, file: image }))
             .publicUrl
