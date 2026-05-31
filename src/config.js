@@ -123,6 +123,7 @@ export function loadConfig() {
       runtimePath: ['onesignal', 'api_url'],
       fallback: 'https://api.onesignal.com/notifications',
     }),
+    proximityAlertCooldownMinutes: Number(process.env.PROXIMITY_ALERT_COOLDOWN_MINUTES ?? 1440),
     internalJobsSecret: process.env.INTERNAL_JOBS_SECRET ?? '',
     initialSuperAdminFullname: process.env.INITIAL_SUPER_ADMIN_FULLNAME ?? '',
     initialSuperAdminPhone: process.env.INITIAL_SUPER_ADMIN_PHONE ?? '',

@@ -100,6 +100,67 @@ function groupCountsByUser(checkins) {
   return counts;
 }
 
+function attachPercentages(items, total) {
+  return items.map((item) => ({
+    ...item,
+    percentage: total > 0 ? Math.round((item.count / total) * 10000) / 100 : 0,
+  }));
+}
+
+function buildGenderAnalysis(users) {
+  const buckets = [
+    { label: 'Male', count: 0 },
+    { label: 'Female', count: 0 },
+    { label: 'Unspecified', count: 0 },
+    { label: 'Other', count: 0 },
+  ];
+
+  for (const user of users) {
+    const normalized = String(user.gender ?? '').trim().toLowerCase();
+    if (normalized === 'male') {
+      buckets[0].count += 1;
+    } else if (normalized === 'female') {
+      buckets[1].count += 1;
+    } else if (!normalized || normalized === 'unspecified') {
+      buckets[2].count += 1;
+    } else {
+      buckets[3].count += 1;
+    }
+  }
+
+  return attachPercentages(buckets, users.length);
+}
+
+function buildAgeAnalysis(users) {
+  const buckets = [
+    { label: 'Child', minAge: 0, maxAge: 12, count: 0 },
+    { label: 'Teenage', minAge: 13, maxAge: 17, count: 0 },
+    { label: 'Young Man', minAge: 18, maxAge: 24, count: 0 },
+    { label: 'Middle Age Man', minAge: 25, maxAge: 44, count: 0 },
+    { label: 'Older Man', minAge: 45, maxAge: null, count: 0 },
+  ];
+
+  for (const user of users) {
+    const age = Number(user.age);
+    if (!Number.isFinite(age) || age < 0) {
+      continue;
+    }
+    if (age <= 12) {
+      buckets[0].count += 1;
+    } else if (age <= 17) {
+      buckets[1].count += 1;
+    } else if (age <= 24) {
+      buckets[2].count += 1;
+    } else if (age <= 44) {
+      buckets[3].count += 1;
+    } else {
+      buckets[4].count += 1;
+    }
+  }
+
+  return attachPercentages(buckets, users.length);
+}
+
 export class RestaurantService {
   constructor({
     restaurantRepository,
@@ -262,6 +323,7 @@ export class RestaurantService {
       (record) => record.restaurantId === restaurant.id,
     );
     const checkins = this.filterAnalyticsCheckins(allRestaurantCheckins, window);
+    const analyticsUsers = await this.loadAnalyticsUsers(checkins);
     const userCounts = groupCountsByUser(checkins);
     const repeatVisitors = [...userCounts.values()].filter((count) => count > 1).length;
     const vipVisitors = [...userCounts.values()].filter((count) => count >= 5).length;
@@ -297,6 +359,8 @@ export class RestaurantService {
       routeTrafficPerformance: [],
       visitBreakdown: this.buildVisitBreakdown(checkins, window),
       topUsers: this.buildAnalyticsTopUsers(checkins),
+      genderAnalysis: buildGenderAnalysis(analyticsUsers),
+      ageAnalysis: buildAgeAnalysis(analyticsUsers),
     };
   }
 
@@ -320,6 +384,12 @@ export class RestaurantService {
     return checkins.filter(
       (record) => window.start <= record.createdAt && record.createdAt <= window.end,
     );
+  }
+
+  async loadAnalyticsUsers(checkins) {
+    const userIds = [...new Set(checkins.map((record) => record.userId).filter(Boolean))];
+    const users = await Promise.all(userIds.map((userId) => this.userRepository.getByUid(userId)));
+    return users.filter((user) => user && user.role === 'user');
   }
 
   buildAnalyticsTrend(checkins, window) {

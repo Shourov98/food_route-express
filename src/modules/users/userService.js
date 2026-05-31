@@ -45,7 +45,9 @@ export class UserService {
     imageStorage,
     restaurantRepository = null,
     proximityAlertRepository = null,
+    proximityAlertLogRepository = null,
     pushNotificationService = null,
+    proximityAlertCooldownMinutes = 1440,
   }) {
     this.userRepository = userRepository;
     this.loginEventRepository = loginEventRepository;
@@ -56,7 +58,9 @@ export class UserService {
     this.imageStorage = imageStorage;
     this.restaurantRepository = restaurantRepository;
     this.proximityAlertRepository = proximityAlertRepository;
+    this.proximityAlertLogRepository = proximityAlertLogRepository;
     this.pushNotificationService = pushNotificationService;
+    this.proximityAlertCooldownMinutes = proximityAlertCooldownMinutes;
   }
 
   async getMe({ accessToken }) {
@@ -151,6 +155,10 @@ export class UserService {
       settings: proximitySettingsData(updatedUser ?? user),
       triggeredAlerts,
     };
+  }
+
+  async reportProximityLocation({ accessToken, payload }) {
+    return this.scanProximityAlerts({ accessToken, payload });
   }
 
   async scanAllProximityAlerts() {
@@ -385,6 +393,9 @@ export class UserService {
       await this.proximityAlertRepository.create(record);
       if (!existing) {
         createdCount += 1;
+      }
+      if (await this.shouldTriggerProximityAlert({ userId: user.uid, restaurantId: restaurant.id, now })) {
+        await this.recordProximityAlertTrigger({ record, now });
         if (await this.sendProximityPush({ user, record })) {
           pushedCount += 1;
         }
@@ -452,5 +463,45 @@ export class UserService {
       },
     });
     return true;
+  }
+
+  async shouldTriggerProximityAlert({ userId, restaurantId, now }) {
+    if (!this.proximityAlertLogRepository) {
+      return true;
+    }
+
+    const latest = await this.proximityAlertLogRepository.getLatestByUserAndRestaurant({
+      userId,
+      restaurantId,
+    });
+    if (!latest?.createdAt) {
+      return true;
+    }
+
+    const cooldownMs = this.proximityAlertCooldownMinutes * 60 * 1000;
+    return now.getTime() - latest.createdAt.getTime() >= cooldownMs;
+  }
+
+  async recordProximityAlertTrigger({ record, now }) {
+    if (!this.proximityAlertLogRepository) {
+      return;
+    }
+
+    await this.proximityAlertLogRepository.create({
+      userId: record.userId,
+      restaurantId: record.restaurantId,
+      restaurantName: record.restaurantName,
+      restaurantAddress: record.restaurantAddress,
+      city: record.city,
+      restaurantLatitude: record.restaurantLatitude,
+      restaurantLongitude: record.restaurantLongitude,
+      userLatitude: record.userLatitude,
+      userLongitude: record.userLongitude,
+      thresholdKm: record.thresholdKm,
+      distanceKm: record.distanceKm,
+      mapsUrl: record.mapsUrl,
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 }

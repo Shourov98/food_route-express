@@ -294,6 +294,7 @@ export async function collectRouteDefinitions(sourceFiles) {
     { method: 'get', path: '/api/v1/users/me/notifications', sourceName: 'endpointCatalog', note: '' },
     { method: 'get', path: '/api/v1/users/me/notifications/preview', sourceName: 'endpointCatalog', note: '' },
     { method: 'get', path: '/api/v1/users/me/notifications/unread-count', sourceName: 'endpointCatalog', note: '' },
+    { method: 'post', path: '/api/v1/users/me/notifications/proximity/location', sourceName: 'endpointCatalog', note: '' },
     { method: 'post', path: '/api/v1/users/me/notifications/read-all', sourceName: 'endpointCatalog', note: '' },
     { method: 'post', path: '/api/v1/users/me/notifications/{notification_id}/read', sourceName: 'endpointCatalog', note: '' },
     { method: 'get', path: '/api/v1/users/me/proximity-settings', sourceName: 'endpointCatalog', note: '' },

@@ -8,6 +8,7 @@ import { FirestoreRewardRepository } from '../rewards/rewardRepository.js';
 import { FirestorePointsLedgerRepository, FirestoreXpLedgerRepository } from '../xp/xpRepository.js';
 import { XpService } from '../xp/xpService.js';
 import { FirestoreChallengeParticipationRepository } from './challengeParticipationRepository.js';
+import { ChallengeParticipationService } from './challengeParticipationService.js';
 
 class FirestoreChallengeRewardRedemptionRepository {
   constructor(firestore) {
@@ -43,13 +44,11 @@ class FirestoreChallengeRewardRedemptionRepository {
   }
 }
 
-import { ChallengeParticipationService } from './challengeParticipationService.js';
-
 let cachedServicePromise;
 
 export function getChallengeParticipationService(config) {
   if (!cachedServicePromise) {
-    cachedServicePromise = getFirebaseClients(config).then(({ auth, firestore }) => {
+    cachedServicePromise = getFirebaseClients(config).then(async ({ app, auth, firestore }) => {
       return new ChallengeParticipationService({
         challengeRepository: new FirestoreChallengeRepository(firestore),
         participationRepository: new FirestoreChallengeParticipationRepository(firestore),

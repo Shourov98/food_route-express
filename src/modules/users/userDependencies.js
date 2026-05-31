@@ -6,7 +6,10 @@ import { FirestoreLoginEventRepository, FirestoreUserRepository } from '../auth/
 import { FirestoreCheckInRepository } from '../checkins/checkinRepository.js';
 import { LeaderboardService } from '../leaderboard/leaderboardService.js';
 import { FirestoreRestaurantRepository } from '../restaurants/restaurantRepository.js';
-import { FirestoreProximityAlertRepository } from '../proximityAlerts/proximityAlertRepository.js';
+import {
+  FirestoreProximityAlertLogRepository,
+  FirestoreProximityAlertRepository,
+} from '../proximityAlerts/proximityAlertRepository.js';
 import { FirestoreLevelRepository } from '../levels/levelRepository.js';
 import { FirestorePointsLedgerRepository, FirestoreXpLedgerRepository } from '../xp/xpRepository.js';
 import { XpService } from '../xp/xpService.js';
@@ -38,7 +41,9 @@ export function getUserService(config) {
         checkinRepository: new FirestoreCheckInRepository(firestore),
         restaurantRepository: new FirestoreRestaurantRepository(firestore),
         proximityAlertRepository: new FirestoreProximityAlertRepository(firestore),
+        proximityAlertLogRepository: new FirestoreProximityAlertLogRepository(firestore),
         pushNotificationService,
+        proximityAlertCooldownMinutes: config.proximityAlertCooldownMinutes,
         imageStorage: new FirebaseImageStorage({
           storage: getStorage(app),
           config,

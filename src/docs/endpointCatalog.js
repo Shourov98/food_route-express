@@ -539,6 +539,21 @@ export const endpointCatalog = {
       properties: {
         latitude: numberProperty('Current user latitude.', -90, 90),
         longitude: numberProperty('Current user longitude.', -180, 180),
+        accuracy: numberProperty('Optional location accuracy in meters.', 0, 1000000),
+        source: stringProperty('Optional location source label, such as gps or background_geolocation.'),
+      },
+    }),
+  },
+  'POST /api/v1/users/me/notifications/proximity/location': {
+    requestBody: makeJsonRequestBody({
+      description:
+        'Mobile-compatible proximity location ping endpoint. Triggers the same scan flow as /users/me/proximity-scan.',
+      required: ['latitude', 'longitude'],
+      properties: {
+        latitude: numberProperty('Current user latitude.', -90, 90),
+        longitude: numberProperty('Current user longitude.', -180, 180),
+        accuracy: numberProperty('Optional location accuracy in meters.', 0, 1000000),
+        source: stringProperty('Optional location source label, such as gps or background_geolocation.'),
       },
     }),
   },

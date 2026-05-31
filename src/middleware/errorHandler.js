@@ -55,7 +55,7 @@ export function errorHandler(err, req, res, next) {
     ? 'invalid_multipart_form'
     : err?.code ?? (statusCode >= 500 ? 'internal_error' : 'http_error');
   const message = isMalformedMultipart
-    ? 'Image upload could not be processed. Please choose the restaurant image again and resubmit the form.'
+    ? 'Image upload could not be processed. Please choose the image again and resubmit the form.'
     : err?.message ??
       (statusCode >= 500
         ? 'Unexpected error occurred. Please contact support with requestId.'

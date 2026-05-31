@@ -76,6 +76,25 @@ class FakeProximityAlertRepository {
   }
 }
 
+class FakeProximityAlertLogRepository {
+  constructor(records = []) {
+    this.records = records;
+  }
+
+  async create(record) {
+    this.records.push(record);
+    return record;
+  }
+
+  async getLatestByUserAndRestaurant({ userId, restaurantId }) {
+    return (
+      [...this.records]
+        .filter((record) => record.userId === userId && record.restaurantId === restaurantId)
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
+    );
+  }
+}
+
 class FakeLoginEventRepository {
   async listByUser() {
     return [];
@@ -94,6 +113,7 @@ class FakeCheckInRepository {
 class FakeImageStorage {}
 class FakePushNotificationService {
   constructor() {
+    this.targetingMode = 'external_id';
     this.messages = [];
   }
   async send(message) {
@@ -247,12 +267,19 @@ test('UserService scanAllProximityAlerts creates alerts for nearby active restau
       },
     ]),
     proximityAlertRepository: new FakeProximityAlertRepository(),
+    proximityAlertLogRepository: new FakeProximityAlertLogRepository(),
     pushNotificationService,
+    proximityAlertCooldownMinutes: 60,
   });
 
   const result = await service.scanAllProximityAlerts();
   assert.equal(result.processedUsers, 2);
   assert.equal(result.createdAlerts, 1);
   assert.equal(result.pushedAlerts, 1);
+  assert.equal(pushNotificationService.messages.length, 1);
+
+  const second = await service.scanAllProximityAlerts();
+  assert.equal(second.createdAlerts, 0);
+  assert.equal(second.pushedAlerts, 0);
   assert.equal(pushNotificationService.messages.length, 1);
 });

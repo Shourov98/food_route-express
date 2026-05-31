@@ -74,10 +74,12 @@ export function validateProximityScan(body) {
   assertObject(body);
   const latitude = optionalNumber(body, 'latitude', { min: -90, max: 90 });
   const longitude = optionalNumber(body, 'longitude', { min: -180, max: 180 });
+  const accuracy = optionalNumber(body, 'accuracy', { min: 0, max: 1_000_000 });
+  const source = optionalString(body, 'source', { min: 1, max: 100 });
   if (latitude === undefined || longitude === undefined) {
     throw validationError('latitude and longitude are required for proximity scan.');
   }
-  return { latitude, longitude };
+  return { latitude, longitude, accuracy, source };
 }
 
 export function validatePushToken(body) {

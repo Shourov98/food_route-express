@@ -140,6 +140,7 @@ Native Express implementation started:
 - `GET /api/v1/users/me/notifications`
 - `GET /api/v1/users/me/notifications/preview`
 - `GET /api/v1/users/me/notifications/unread-count`
+- `POST /api/v1/users/me/notifications/proximity/location`
 - `POST /api/v1/users/me/notifications/{notification_id}/read`
 - `POST /api/v1/users/me/notifications/read-all`
 - `GET /api/v1/users/me/overview`
@@ -221,8 +222,10 @@ currently dispatch immediately for all users, new users, city, or age-group audi
 that same OneSignal `external_id` mapping. Reward-claim and challenge-completion events also
 trigger automatic push notifications through the backend. Proximity pushes are created by the
 server proximity scan flow after the user enables proximity alerts and their location is
-submitted to `POST /api/v1/users/me/proximity-scan`, or after an internal proximity scan uses
-stored last-known coordinates.
+submitted to either `POST /api/v1/users/me/proximity-scan` or the mobile-compatible
+`POST /api/v1/users/me/notifications/proximity/location`, or after an internal proximity scan
+uses stored last-known coordinates. Repeated alerts for the same user and restaurant are throttled
+by the backend cooldown window using proximity alert logs.
 
 ## Development
 

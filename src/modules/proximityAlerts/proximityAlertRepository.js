@@ -62,3 +62,27 @@ export class FirestoreProximityAlertRepository {
     return alertFromData(snapshot.data(), snapshot.id);
   }
 }
+
+export class FirestoreProximityAlertLogRepository {
+  constructor(firestore) {
+    this.collection = firestore.collection('proximity_alert_logs');
+  }
+
+  async create(record) {
+    await this.collection.add(record);
+    return record;
+  }
+
+  async getLatestByUserAndRestaurant({ userId, restaurantId }) {
+    const snapshot = await this.collection
+      .where('userId', '==', userId)
+      .where('restaurantId', '==', restaurantId)
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .get();
+    if (snapshot.empty) {
+      return null;
+    }
+    return alertFromData(snapshot.docs[0].data(), snapshot.docs[0].id);
+  }
+}

@@ -126,7 +126,8 @@ function makeUser(overrides = {}) {
 function createServices({ checkins = [] } = {}) {
   const userRepository = new FakeUserRepository([
     makeUser(),
-    makeUser({ uid: 'user-1', role: 'user', email: 'user@example.com' }),
+    makeUser({ uid: 'user-1', role: 'user', email: 'user@example.com', gender: 'male', age: 16 }),
+    makeUser({ uid: 'user-2', role: 'user', email: 'user2@example.com', gender: 'female', age: 30 }),
   ]);
   const restaurantRepository = new FakeRestaurantRepository();
   const menuRepository = new FakeMenuRepository();
@@ -334,4 +335,8 @@ test('RestaurantService builds check-in based analytics for a restaurant', async
   assert.equal(result.topUsers[0].userId, 'user-1');
   assert.equal(result.visitBreakdown.some((item) => item.checkIns === 2), true);
   assert.equal(result.routeTrafficTracked, false);
+  assert.equal(result.genderAnalysis.find((item) => item.label === 'Male')?.count, 1);
+  assert.equal(result.genderAnalysis.find((item) => item.label === 'Female')?.count, 1);
+  assert.equal(result.ageAnalysis.find((item) => item.label === 'Teenage')?.count, 1);
+  assert.equal(result.ageAnalysis.find((item) => item.label === 'Middle Age Man')?.count, 1);
 });
