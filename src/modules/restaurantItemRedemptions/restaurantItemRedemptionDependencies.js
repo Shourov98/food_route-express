@@ -1,5 +1,6 @@
 import { getFirebaseClients } from '../../infra/firebase.js';
 import { FirebaseIdentityProvider } from '../../infra/identityProvider.js';
+import { buildPushNotificationService } from '../../infra/pushNotificationServiceFactory.js';
 import { FirestoreUserRepository } from '../auth/authRepository.js';
 import { FirestoreMenuItemRepository } from '../menus/menuRepository.js';
 import { FirestoreRewardRepository } from '../rewards/rewardRepository.js';
@@ -13,7 +14,7 @@ let cachedServicePromise;
 
 export function getRestaurantItemRedemptionService(config) {
   if (!cachedServicePromise) {
-    cachedServicePromise = getFirebaseClients(config).then(({ auth, firestore }) => {
+    cachedServicePromise = getFirebaseClients(config).then(async ({ app, auth, firestore }) => {
       return new RestaurantItemRedemptionService({
         restaurantRepository: new FirestoreRestaurantRepository(firestore),
         rewardRepository: new FirestoreRewardRepository(firestore),
@@ -25,6 +26,7 @@ export function getRestaurantItemRedemptionService(config) {
           xpRepository: new FirestoreXpLedgerRepository(firestore),
           pointsRepository: new FirestorePointsLedgerRepository(firestore),
         }),
+        pushNotificationService: await buildPushNotificationService({ config, app }),
       });
     });
   }

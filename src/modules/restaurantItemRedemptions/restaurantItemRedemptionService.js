@@ -84,6 +84,7 @@ export class RestaurantItemRedemptionService {
     userRepository,
     identityProvider,
     xpService,
+    pushNotificationService = null,
   }) {
     this.restaurantRepository = restaurantRepository;
     this.rewardRepository = rewardRepository;
@@ -92,6 +93,7 @@ export class RestaurantItemRedemptionService {
     this.userRepository = userRepository;
     this.identityProvider = identityProvider;
     this.xpService = xpService;
+    this.pushNotificationService = pushNotificationService;
   }
 
   async listRewardStore({ accessToken, page, pageSize, search }) {
@@ -224,6 +226,8 @@ export class RestaurantItemRedemptionService {
       });
     }
 
+    await this.sendItemRedemptionPush({ user, item, restaurant, redemption });
+
     return {
       redemption: redemptionData(redemption),
       userXpAfter: await this.xpService.getTotalXp(user.uid),
@@ -283,5 +287,34 @@ export class RestaurantItemRedemptionService {
       });
     }
     return { restaurants, records };
+  }
+
+  async sendItemRedemptionPush({ user, item, restaurant, redemption }) {
+    if (!this.pushNotificationService) {
+      return;
+    }
+    if (
+      this.pushNotificationService.targetingMode !== 'external_id' &&
+      !user.pushNotificationToken
+    ) {
+      return;
+    }
+
+    try {
+      await this.pushNotificationService.send({
+        recipientId: user.uid,
+        token: user.pushNotificationToken,
+        title: 'Reward redeemed',
+        body: `You redeemed ${item.name} from ${restaurant.name} with points.`,
+        data: {
+          type: 'restaurant_item_redeemed',
+          itemId: item.id,
+          restaurantId: restaurant.id,
+          redemptionId: redemption.id,
+        },
+      });
+    } catch {
+      // Item redemption should succeed even if push delivery fails.
+    }
   }
 }

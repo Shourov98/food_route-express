@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { MenuService } from '../src/modules/menus/menuService.js';
+import { RestaurantItemRedemptionService } from '../src/modules/restaurantItemRedemptions/restaurantItemRedemptionService.js';
 import { RestaurantService } from '../src/modules/restaurants/restaurantService.js';
+import { XpService } from '../src/modules/xp/xpService.js';
 
 class FakeUserRepository {
   constructor(users) {
@@ -83,6 +85,72 @@ class FakeMenuItemRepository {
   async delete(id) {
     return this.records.delete(id);
   }
+
+  async listAll() {
+    return [...this.records.values()];
+  }
+}
+
+class FakeRewardRepository {
+  async listAll() {
+    return [];
+  }
+}
+
+class FakeRestaurantItemRedemptionRepository {
+  constructor(records = []) {
+    this.records = new Map(records.map((record) => [record.id, record]));
+  }
+
+  async create(record) {
+    this.records.set(record.id, record);
+    return record;
+  }
+
+  async delete(id) {
+    return this.records.delete(id);
+  }
+
+  async listByUser(userId) {
+    return [...this.records.values()].filter((record) => record.userId === userId);
+  }
+}
+
+class FakePointsRepository {
+  constructor(records = []) {
+    this.records = [...records];
+  }
+
+  async listByUser(userId) {
+    return this.records.filter((record) => record.userId === userId);
+  }
+
+  async create(record) {
+    this.records.push(record);
+    return record;
+  }
+}
+
+class FakeXpRepository {
+  constructor(records = []) {
+    this.records = [...records];
+  }
+
+  async listByUser(userId) {
+    return this.records.filter((record) => record.userId === userId);
+  }
+}
+
+class FakePushNotificationService {
+  constructor() {
+    this.messages = [];
+    this.targetingMode = 'external_id';
+  }
+
+  async send(message) {
+    this.messages.push(message);
+    return true;
+  }
 }
 
 class FakeCheckInRepository {
@@ -119,6 +187,10 @@ function makeUser(overrides = {}) {
     email: 'admin@example.com',
     role: 'admin',
     isBlocked: false,
+    isVerified: true,
+    city: 'Dhaka',
+    country: 'Bangladesh',
+    pushNotificationToken: null,
     ...overrides,
   };
 }
@@ -160,6 +232,70 @@ function createServices({ checkins = [] } = {}) {
     menuItemRepository,
   };
 }
+
+test('RestaurantItemRedemptionService redeems an item with points and sends push notification', async () => {
+  const userRepository = new FakeUserRepository([
+    makeUser({ uid: 'user-1', role: 'user', email: 'user@example.com' }),
+  ]);
+  const restaurantRepository = new FakeRestaurantRepository([
+    {
+      id: 'restaurant-1',
+      name: 'Cafe One',
+      address: '123 Main Street',
+      city: 'Dhaka',
+      status: 'active',
+    },
+  ]);
+  const menuItemRepository = new FakeMenuItemRepository([
+    {
+      id: 'item-1',
+      menuId: 'menu-1',
+      restaurantId: 'restaurant-1',
+      name: 'Latte',
+      description: 'Milk coffee',
+      imageUrl: 'https://cdn.example.com/latte.png',
+      pointsToBuy: 100,
+      isAvailable: true,
+      priceInCents: 1250,
+    },
+  ]);
+  const pointsRepository = new FakePointsRepository([
+    {
+      id: 'points-1',
+      userId: 'user-1',
+      pointsDelta: 150,
+      sourceType: 'check_in',
+      sourceId: 'check-1',
+      createdAt: new Date(),
+    },
+  ]);
+  const pushNotificationService = new FakePushNotificationService();
+  const service = new RestaurantItemRedemptionService({
+    restaurantRepository,
+    rewardRepository: new FakeRewardRepository(),
+    menuItemRepository,
+    redemptionRepository: new FakeRestaurantItemRedemptionRepository(),
+    userRepository,
+    identityProvider: new FakeIdentityProvider(),
+    xpService: new XpService({
+      xpRepository: new FakeXpRepository(),
+      pointsRepository,
+    }),
+    pushNotificationService,
+  });
+
+  const result = await service.redeemItem({
+    accessToken: 'user-1',
+    itemId: 'item-1',
+  });
+
+  assert.equal(result.redemption.itemId, 'item-1');
+  assert.equal(result.userPointsAfter, 50);
+  assert.equal(pushNotificationService.messages.length, 1);
+  assert.equal(pushNotificationService.messages[0].recipientId, 'user-1');
+  assert.equal(pushNotificationService.messages[0].title, 'Reward redeemed');
+  assert.equal(pushNotificationService.messages[0].data.type, 'restaurant_item_redeemed');
+});
 
 test('RestaurantService creates restaurant and default menu', async () => {
   const { restaurantService, menuRepository } = createServices();
