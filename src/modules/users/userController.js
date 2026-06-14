@@ -86,12 +86,13 @@ export function createUserController({ getUserService, config }) {
         accessToken: requireBearerToken(req),
         payload: validateSocialShare(req.body),
       });
+      const shareLabel = data.shareType === 'checkin' ? 'check-in' : 'reward';
       res.json(
         successResponse(
           data,
           data.awarded
-            ? 'Social share reward granted successfully.'
-            : 'Social share reward has already been claimed for this share.',
+            ? `Social share reward granted successfully for this ${shareLabel}.`
+            : `Social share reward has already been claimed for this ${shareLabel}.`,
         ),
       );
     },

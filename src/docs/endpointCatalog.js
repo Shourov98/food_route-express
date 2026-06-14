@@ -1141,10 +1141,11 @@ export const endpointCatalog = {
   },
   'POST /api/v1/users/me/social-share-reward': {
     requestBody: makeJsonRequestBody({
-      description: 'Claim the social-share reward for a unique share action.',
-      required: ['shareId'],
+      description: 'Claim a social-share reward for one owned check-in or reward redemption.',
+      required: ['shareType', 'entityId'],
       properties: {
-        shareId: stringProperty('Unique idempotent share identifier from the client.'),
+        shareType: stringProperty("Share type. Supported values: 'checkin' or 'reward'."),
+        entityId: stringProperty('Owned check-in id or reward redemption id being shared.'),
         platform: stringProperty('Optional social platform name.'),
         shareUrl: stringProperty('Optional shared URL.'),
       },

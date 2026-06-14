@@ -102,8 +102,13 @@ export function validatePushToken(body) {
 
 export function validateSocialShare(body) {
   assertObject(body);
+  const shareType = requiredString(body, 'shareType', { min: 1, max: 50 }).trim().toLowerCase();
+  if (!new Set(['checkin', 'reward']).has(shareType)) {
+    throw validationError("Field 'shareType' must be 'checkin' or 'reward'.");
+  }
   return {
-    shareId: requiredString(body, 'shareId', { min: 1, max: 128 }),
+    shareType,
+    entityId: requiredString(body, 'entityId', { min: 1, max: 128 }),
     platform: optionalString(body, 'platform', { min: 2, max: 50 }),
     shareUrl: optionalString(body, 'shareUrl', { max: 500 }),
   };

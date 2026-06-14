@@ -156,6 +156,7 @@ Payload notes:
 - `GET /api/v1/users/me/summary` returns the current user XP, points, streak, total check-in count, and rank summary in one response
 - `GET /api/v1/users/me/points-summary` returns the current spendable points balance
 - `GET /api/v1/users/me/ranks` returns current user city and national ranks
+- `POST /api/v1/users/me/social-share-reward` expects `shareType` (`checkin` or `reward`), `entityId`, optional `platform`, and optional `shareUrl`; check-in shares award 50 points, reward shares award 100 points, and each owned entity can only be rewarded once
 - `XP` is progression only and never decreases from spending
 - `Points` are the spendable balance used for redemptions and admin adjustments
 - `GET /api/v1/users/leaderboard` expects `scope=local|national`, `period=weekly|monthly`, and `Authorization: Bearer <access_token>`

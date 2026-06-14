@@ -39,6 +39,14 @@ export class FirestoreCheckInRepository {
     return record;
   }
 
+  async getById(checkinId) {
+    const snapshot = await this.collection.doc(checkinId).get();
+    if (!snapshot.exists) {
+      return null;
+    }
+    return checkinFromData(snapshot.data());
+  }
+
   async getRecentByUser(userId) {
     const records = await this.listByUser(userId);
     return records[0] ?? null;
