@@ -71,6 +71,14 @@ class FakeCheckInRepository {
     return this.records.find((record) => record.id === checkinId) ?? null;
   }
 
+  async getRecentByUser(userId) {
+    const records = this.records.filter((record) => record.userId === userId);
+    if (!records.length) return null;
+    return records.reduce((latest, record) =>
+      new Date(latest.createdAt ?? 0) >= new Date(record.createdAt ?? 0) ? latest : record,
+    );
+  }
+
   async countByUser(userId) {
     return this.records.filter((record) => record.userId === userId).length;
   }
@@ -83,6 +91,20 @@ class FakeRewardRedemptionRepository {
 
   async getById(redemptionId) {
     return this.records.find((record) => record.id === redemptionId) ?? null;
+  }
+
+  async listByUser(userId) {
+    return this.records.filter((record) => record.userId === userId);
+  }
+}
+
+class FakeRestaurantRepository {
+  constructor(records = []) {
+    this.records = new Map(records.map((record) => [record.id, record]));
+  }
+
+  async getById(restaurantId) {
+    return this.records.get(restaurantId) ?? null;
   }
 }
 
@@ -159,6 +181,9 @@ function createService({
   pointRecords = [],
   checkinRecords = null,
   rewardRedemptionRecords = [],
+  restaurantRecords = [
+    { id: 'restaurant-1', name: 'Cafe One', imageUrl: 'https://cdn.example.com/cafe-one.png' },
+  ],
 } = {}) {
   const userRepository = new FakeUserRepository([
     user,
@@ -195,6 +220,7 @@ function createService({
       ],
     ),
     rewardRedemptionRepository: new FakeRewardRedemptionRepository(rewardRedemptionRecords),
+    restaurantRepository: new FakeRestaurantRepository(restaurantRecords),
     imageStorage: new FakeImageStorage(),
     leaderboardService,
   });
@@ -325,4 +351,98 @@ test('UserService claimSocialShareReward rejects sharing another user check-in',
       error.code === 'checkin_not_found' &&
       error.statusCode === 404,
   );
+});
+
+test('UserService claimSocialShareReward uses most recent check-in when entityId is omitted', async () => {
+  const service = createService({
+    checkinRecords: [
+      { id: 'check-1', userId: 'user-1', createdAt: new Date('2026-06-16T08:00:00.000Z') },
+      { id: 'check-2', userId: 'user-1', createdAt: new Date('2026-06-16T09:00:00.000Z') },
+    ],
+  });
+
+  const result = await service.claimSocialShareReward({
+    accessToken: 'token',
+    payload: { shareType: 'checkin', platform: 'instagram' },
+  });
+
+  assert.equal(result.awarded, true);
+  assert.equal(result.shareType, 'checkin');
+  assert.equal(result.entityId, 'check-2');
+  assert.equal(result.pointsDelta, 50);
+});
+
+test('UserService claimSocialShareReward uses most recent reward redemption when entityId is omitted', async () => {
+  const service = createService({
+    rewardRedemptionRecords: [
+      { id: 'redemption-1', userId: 'user-1', redeemedAt: new Date('2026-06-16T08:00:00.000Z') },
+      { id: 'redemption-2', userId: 'user-1', redeemedAt: new Date('2026-06-16T09:00:00.000Z') },
+    ],
+  });
+
+  const result = await service.claimSocialShareReward({
+    accessToken: 'token',
+    payload: { shareType: 'reward', platform: 'facebook' },
+  });
+
+  assert.equal(result.awarded, true);
+  assert.equal(result.shareType, 'reward');
+  assert.equal(result.entityId, 'redemption-2');
+  assert.equal(result.pointsDelta, 100);
+});
+
+test('UserService getCheckinSharePreview returns share-ready content for an owned check-in', async () => {
+  const service = createService({
+    checkinRecords: [
+      {
+        id: 'check-1',
+        userId: 'user-1',
+        restaurantId: 'restaurant-1',
+        restaurantName: 'Cafe One',
+        awardedPoints: 25,
+        createdAt: new Date('2026-06-16T08:00:00.000Z'),
+      },
+    ],
+  });
+
+  const result = await service.getCheckinSharePreview({
+    accessToken: 'token',
+    checkinId: 'check-1',
+  });
+
+  assert.equal(result.shareType, 'checkin');
+  assert.equal(result.entityId, 'check-1');
+  assert.equal(result.restaurantName, 'Cafe One');
+  assert.equal(result.pointsReward, 50);
+  assert.equal(result.imageUrl, 'https://cdn.example.com/cafe-one.png');
+  assert.match(result.title, /checked in at Cafe One/);
+});
+
+test('UserService getRewardSharePreview returns share-ready content for an owned reward redemption', async () => {
+  const service = createService({
+    rewardRedemptionRecords: [
+      {
+        id: 'redemption-1',
+        userId: 'user-1',
+        rewardId: 'reward-1',
+        rewardTitle: 'Free Burger',
+        rewardImageUrl: 'https://cdn.example.com/reward.png',
+        rewardCategory: 'general_rewards',
+        pointsRequired: 100,
+        redeemedAt: new Date('2026-06-16T09:00:00.000Z'),
+      },
+    ],
+  });
+
+  const result = await service.getRewardSharePreview({
+    accessToken: 'token',
+    redemptionId: 'redemption-1',
+  });
+
+  assert.equal(result.shareType, 'reward');
+  assert.equal(result.entityId, 'redemption-1');
+  assert.equal(result.rewardTitle, 'Free Burger');
+  assert.equal(result.pointsReward, 100);
+  assert.equal(result.imageUrl, 'https://cdn.example.com/reward.png');
+  assert.match(result.text, /Free Burger/);
 });

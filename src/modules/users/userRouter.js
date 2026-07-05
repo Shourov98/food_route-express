@@ -22,6 +22,8 @@ export function createUserRouter(config) {
   router.patch('/me/proximity-settings', asyncHandler(controller.updateProximitySettings));
   router.post('/me/proximity-scan', asyncHandler(controller.scanProximity));
   router.post('/me/push-token', asyncHandler(controller.registerPushToken));
+  router.get('/me/share/check-ins/:checkinId/preview', asyncHandler(controller.getCheckinSharePreview));
+  router.get('/me/share/rewards/:redemptionId/preview', asyncHandler(controller.getRewardSharePreview));
   router.post('/me/social-share-reward', asyncHandler(controller.claimSocialShareReward));
   router.get('/me/xp-history', asyncHandler(controller.getXpHistory));
   router.get('/me/streak', asyncHandler(controller.getStreak));

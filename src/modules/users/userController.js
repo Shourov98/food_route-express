@@ -96,6 +96,18 @@ export function createUserController({ getUserService, config }) {
         ),
       );
     },
+    async getCheckinSharePreview(req, res) {
+      res.json(successResponse(await (await service()).getCheckinSharePreview({
+        accessToken: requireBearerToken(req),
+        checkinId: req.params.checkinId,
+      })));
+    },
+    async getRewardSharePreview(req, res) {
+      res.json(successResponse(await (await service()).getRewardSharePreview({
+        accessToken: requireBearerToken(req),
+        redemptionId: req.params.redemptionId,
+      })));
+    },
     async getXpHistory(req, res) {
       const { page, pageSize } = parsePagination(req.query);
       res.json(successResponse(await (await service()).getXpHistory({

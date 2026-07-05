@@ -440,6 +440,12 @@ export const endpointCatalog = {
         qrCodeLongitude: numberProperty('QR code longitude.', -180, 180),
         qrCodeToken: stringProperty('QR token string.'),
         pointsPerCheckIn: integerProperty('Points granted for a check-in.', 0, 10000),
+        receiptUploadEnabled: booleanProperty('Whether users can upload receipts after check-in.'),
+        pointsPerReceiptUpload: integerProperty(
+          'Points granted when a user uploads a receipt after check-in.',
+          0,
+          10000,
+        ),
         image: binaryProperty('Restaurant image upload.'),
       },
     }),
@@ -475,6 +481,12 @@ export const endpointCatalog = {
         qrCodeLongitude: numberProperty('QR code longitude.', -180, 180),
         qrCodeToken: stringProperty('QR token string.'),
         pointsPerCheckIn: integerProperty('Points granted for a check-in.', 0, 10000),
+        receiptUploadEnabled: booleanProperty('Whether users can upload receipts after check-in.'),
+        pointsPerReceiptUpload: integerProperty(
+          'Points granted when a user uploads a receipt after check-in.',
+          0,
+          10000,
+        ),
         imageUrl: stringProperty('Existing image URL when no replacement image is uploaded.'),
         image: binaryProperty('Optional replacement restaurant image upload.'),
       },
@@ -596,6 +608,16 @@ export const endpointCatalog = {
       integerParam('page', 'Page number.', true),
       integerParam('pageSize', 'Page size.', true),
     ]),
+  },
+  'POST /api/v1/restaurants/{restaurant_id}/receipt': {
+    requestBody: makeMultipartRequestBody({
+      description:
+        'Upload one receipt image for the latest eligible check-in at this restaurant and receive the restaurant configured reward.',
+      required: ['image'],
+      properties: {
+        image: binaryProperty('Receipt image upload.'),
+      },
+    }),
   },
   'GET /api/v1/admin/check-ins': {
     parameters: makeQueryParameters([
@@ -912,15 +934,41 @@ export const endpointCatalog = {
   'POST /api/v1/admin/restaurants': {
     requestBody: makeMultipartRequestBody({
       description: 'Create a restaurant.',
-      required: ['image'],
+      required: [
+        'name',
+        'address',
+        'latitude',
+        'longitude',
+        'category',
+        'openingTime',
+        'closingTime',
+        'qrCodeName',
+        'qrCodeLatitude',
+        'qrCodeLongitude',
+        'qrCodeToken',
+        'pointsPerCheckIn',
+        'image',
+      ],
       properties: {
         name: stringProperty('Restaurant name.'),
-        description: stringProperty('Restaurant description.'),
-        city: stringProperty('City.'),
-        address: stringProperty('Address.'),
-        latitude: numberProperty('Latitude.'),
-        longitude: numberProperty('Longitude.'),
+        address: stringProperty('Restaurant address.'),
+        city: stringProperty('Optional restaurant city.'),
+        latitude: numberProperty('Restaurant latitude.', -90, 90),
+        longitude: numberProperty('Restaurant longitude.', -180, 180),
         category: stringProperty('Restaurant category.'),
+        openingTime: stringProperty('Opening time in HH:mm format.'),
+        closingTime: stringProperty('Closing time in HH:mm format.'),
+        qrCodeName: stringProperty('QR code label.'),
+        qrCodeLatitude: numberProperty('QR code latitude.', -90, 90),
+        qrCodeLongitude: numberProperty('QR code longitude.', -180, 180),
+        qrCodeToken: stringProperty('QR token string.'),
+        pointsPerCheckIn: integerProperty('Points granted for a check-in.', 0, 10000),
+        receiptUploadEnabled: booleanProperty('Whether users can upload receipts after check-in.'),
+        pointsPerReceiptUpload: integerProperty(
+          'Points granted when a user uploads a receipt after check-in.',
+          0,
+          10000,
+        ),
         image: binaryProperty('Restaurant image upload.'),
       },
     }),
@@ -930,13 +978,26 @@ export const endpointCatalog = {
       description: 'Update a restaurant.',
       properties: {
         name: stringProperty('Restaurant name.'),
-        description: stringProperty('Restaurant description.'),
-        city: stringProperty('City.'),
-        address: stringProperty('Address.'),
-        latitude: numberProperty('Latitude.'),
-        longitude: numberProperty('Longitude.'),
+        address: stringProperty('Restaurant address.'),
+        city: stringProperty('Optional restaurant city.'),
+        latitude: numberProperty('Restaurant latitude.', -90, 90),
+        longitude: numberProperty('Restaurant longitude.', -180, 180),
         category: stringProperty('Restaurant category.'),
-        image: binaryProperty('Restaurant image upload.'),
+        openingTime: stringProperty('Opening time in HH:mm format.'),
+        closingTime: stringProperty('Closing time in HH:mm format.'),
+        qrCodeName: stringProperty('QR code label.'),
+        qrCodeLatitude: numberProperty('QR code latitude.', -90, 90),
+        qrCodeLongitude: numberProperty('QR code longitude.', -180, 180),
+        qrCodeToken: stringProperty('QR token string.'),
+        pointsPerCheckIn: integerProperty('Points granted for a check-in.', 0, 10000),
+        receiptUploadEnabled: booleanProperty('Whether users can upload receipts after check-in.'),
+        pointsPerReceiptUpload: integerProperty(
+          'Points granted when a user uploads a receipt after check-in.',
+          0,
+          10000,
+        ),
+        imageUrl: stringProperty('Existing image URL when no replacement image is uploaded.'),
+        image: binaryProperty('Optional replacement restaurant image upload.'),
       },
     }),
   },
@@ -1142,7 +1203,7 @@ export const endpointCatalog = {
   'POST /api/v1/users/me/social-share-reward': {
     requestBody: makeJsonRequestBody({
       description: 'Claim a social-share reward for one owned check-in or reward redemption.',
-      required: ['shareType', 'entityId'],
+      required: ['shareType'],
       properties: {
         shareType: stringProperty("Share type. Supported values: 'checkin' or 'reward'."),
         entityId: stringProperty('Owned check-in id or reward redemption id being shared.'),
@@ -1150,6 +1211,14 @@ export const endpointCatalog = {
         shareUrl: stringProperty('Optional shared URL.'),
       },
     }),
+  },
+  'GET /api/v1/users/me/share/check-ins/{checkin_id}/preview': {
+    description:
+      'Get share preview content for one owned check-in, including title, text, image, and the available social-share reward points.',
+  },
+  'GET /api/v1/users/me/share/rewards/{redemption_id}/preview': {
+    description:
+      'Get share preview content for one owned reward redemption, including title, text, image, and the available social-share reward points.',
   },
   'POST /api/v1/admin/packages/restaurants/{restaurant_id}/activate': {
     requestBody: makeJsonRequestBody({

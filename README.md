@@ -104,6 +104,7 @@ Native Express implementation started:
 - `GET /api/v1/admin/routes/restaurants/search`
 - `POST /api/v1/check-ins/scan`
 - `GET /api/v1/check-ins/history`
+- `POST /api/v1/restaurants/{restaurant_id}/receipt`
 - `GET /api/v1/users/me/routes`
 - `GET /api/v1/users/me/routes/{route_id}`
 - `GET /api/v1/users/me/spins/rewards`
@@ -154,6 +155,8 @@ Native Express implementation started:
 - `POST /api/v1/users/me/proximity-scan`
 - `POST /api/v1/users/me/push-token`
 - `POST /api/v1/users/me/social-share-reward`
+- `GET /api/v1/users/me/share/check-ins/{checkin_id}/preview`
+- `GET /api/v1/users/me/share/rewards/{redemption_id}/preview`
 - `GET /api/v1/users/me/xp-history`
 - `GET /api/v1/users/me/streak`
 - `GET /api/v1/users/me/ranks`

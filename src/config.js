@@ -1,6 +1,8 @@
-import 'dotenv/config';
-
+import dotenv from 'dotenv';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
+dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)) });
 
 function parseJsonConfig(value) {
   if (!value) {

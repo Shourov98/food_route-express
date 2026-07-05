@@ -35,6 +35,8 @@ function restaurantResponse(record) {
     imageUrl: record.imageUrl,
     qrCode: record.qrCode,
     pointsPerCheckIn: record.pointsPerCheckIn,
+    receiptUploadEnabled: Boolean(record.receiptUploadEnabled),
+    pointsPerReceiptUpload: record.pointsPerReceiptUpload ?? 0,
     status: record.status,
     createdBy: record.createdBy,
     enabledPackages: record.enabledPackages,
@@ -199,6 +201,8 @@ export class RestaurantService {
       imageUrl,
       qrCode: payload.qrCode,
       pointsPerCheckIn: payload.pointsPerCheckIn,
+      receiptUploadEnabled: payload.receiptUploadEnabled,
+      pointsPerReceiptUpload: payload.pointsPerReceiptUpload,
       enabledPackages: [],
       status: 'inactive',
       createdBy: admin.uid,
@@ -230,6 +234,10 @@ export class RestaurantService {
       });
     }
 
+    const pointsPerReceiptUpload = payload.hasPointsPerReceiptUploadField
+      ? payload.pointsPerReceiptUpload
+      : (existing.pointsPerReceiptUpload ?? payload.pointsPerCheckIn);
+
     const updated = {
       ...existing,
       name: payload.name,
@@ -246,6 +254,8 @@ export class RestaurantService {
         : payload.imageUrl || existing.imageUrl,
       qrCode: payload.qrCode,
       pointsPerCheckIn: payload.pointsPerCheckIn,
+      receiptUploadEnabled: true,
+      pointsPerReceiptUpload,
       createdBy: existing.createdBy || admin.uid,
       updatedAt: new Date(),
     };

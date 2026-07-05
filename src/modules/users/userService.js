@@ -203,14 +203,11 @@ export class UserService {
 
   async claimSocialShareReward({ accessToken, payload }) {
     const user = await this.getCurrentUser(accessToken);
-    const entityId = payload.entityId.trim();
-    if (!entityId) {
-      throw new ApplicationError({
-        code: 'invalid_share_entity',
-        message: 'The provided entityId is invalid.',
-        statusCode: 400,
-      });
-    }
+    const entityId = await this.resolveSocialShareEntityId({
+      userId: user.uid,
+      shareType: payload.shareType,
+      entityId: payload.entityId,
+    });
     const pointsDelta = await this.resolveSocialSharePoints({
       userId: user.uid,
       shareType: payload.shareType,
@@ -235,6 +232,46 @@ export class UserService {
     };
   }
 
+  async getCheckinSharePreview({ accessToken, checkinId }) {
+    const user = await this.getCurrentUser(accessToken);
+    const checkin = await this.requireOwnedCheckin({ userId: user.uid, checkinId });
+    const restaurant = this.restaurantRepository
+      ? await this.restaurantRepository.getById(checkin.restaurantId)
+      : null;
+    return {
+      shareType: 'checkin',
+      entityId: checkin.id,
+      title: `I just checked in at ${checkin.restaurantName}`,
+      text: `I just earned ${checkin.awardedPoints} points at ${checkin.restaurantName}.`,
+      imageUrl: restaurant?.imageUrl ?? null,
+      pointsReward: 50,
+      restaurantId: checkin.restaurantId,
+      restaurantName: checkin.restaurantName,
+      awardedPoints: checkin.awardedPoints,
+      createdAt: checkin.createdAt,
+    };
+  }
+
+  async getRewardSharePreview({ accessToken, redemptionId }) {
+    const user = await this.getCurrentUser(accessToken);
+    const redemption = await this.requireOwnedRewardRedemption({
+      userId: user.uid,
+      redemptionId,
+    });
+    return {
+      shareType: 'reward',
+      entityId: redemption.id,
+      title: `I just redeemed ${redemption.rewardTitle}`,
+      text: `I redeemed ${redemption.rewardTitle} for ${redemption.pointsRequired} points.`,
+      imageUrl: redemption.rewardImageUrl,
+      pointsReward: 100,
+      rewardId: redemption.rewardId,
+      rewardTitle: redemption.rewardTitle,
+      rewardCategory: redemption.rewardCategory,
+      redeemedAt: redemption.redeemedAt,
+    };
+  }
+
   async resolveSocialSharePoints({ userId, shareType, entityId }) {
     if (shareType === 'checkin') {
       await this.requireOwnedCheckin({ userId, checkinId: entityId });
@@ -242,6 +279,39 @@ export class UserService {
     }
     await this.requireOwnedRewardRedemption({ userId, redemptionId: entityId });
     return 100;
+  }
+
+  async resolveSocialShareEntityId({ userId, shareType, entityId }) {
+    const normalized = (entityId ?? '').trim();
+    if (normalized) {
+      return normalized;
+    }
+    if (shareType === 'checkin') {
+      const recentCheckin = await this.checkinRepository.getRecentByUser(userId);
+      if (!recentCheckin) {
+        throw new ApplicationError({
+          code: 'checkin_not_found',
+          message: 'No check-in found for the provided identifier.',
+          statusCode: 404,
+        });
+      }
+      return recentCheckin.id;
+    }
+    if (!this.rewardRedemptionRepository) {
+      throw new Error('Reward redemption repository is not configured.');
+    }
+    const redemptions = await this.rewardRedemptionRepository.listByUser(userId);
+    if (!redemptions.length) {
+      throw new ApplicationError({
+        code: 'reward_redemption_not_found',
+        message: 'No reward redemption found for the provided identifier.',
+        statusCode: 404,
+      });
+    }
+    const recentRedemption = redemptions.reduce((latest, record) =>
+      latest.redeemedAt >= record.redeemedAt ? latest : record,
+    );
+    return recentRedemption.id;
   }
 
   async requireOwnedCheckin({ userId, checkinId }) {

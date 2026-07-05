@@ -146,6 +146,7 @@ Payload notes:
 - `GET /api/v1/admin/qr-codes/{restaurant_id}/pdf`
 - `POST /api/v1/admin/restaurants` expects `multipart/form-data` with restaurant fields and required `image`; packages are assigned later from the restaurant view flow
 - `PUT /api/v1/admin/restaurants/{restaurant_id}` expects `multipart/form-data` with restaurant fields and optional `image`; packages are managed separately through package APIs
+- Both admin restaurant write endpoints also accept `receiptUploadEnabled` and `pointsPerReceiptUpload` so receipt rewards can vary by restaurant
 - `POST /api/v1/auth/register` expects `fullname`, `email`, `gender`, `age`, `country`, `city`, `password`
 - `PATCH /api/v1/users/me/image` expects `multipart/form-data` with `image`
 - `PATCH /api/v1/admin/users/{user_id}/points` expects `pointsDelta`
@@ -157,10 +158,13 @@ Payload notes:
 - `GET /api/v1/users/me/points-summary` returns the current spendable points balance
 - `GET /api/v1/users/me/ranks` returns current user city and national ranks
 - `POST /api/v1/users/me/social-share-reward` expects `shareType` (`checkin` or `reward`), `entityId`, optional `platform`, and optional `shareUrl`; check-in shares award 50 points, reward shares award 100 points, and each owned entity can only be rewarded once
+- `GET /api/v1/users/me/share/check-ins/{checkin_id}/preview` returns share-ready preview content for one owned check-in
+- `GET /api/v1/users/me/share/rewards/{redemption_id}/preview` returns share-ready preview content for one owned reward redemption
 - `XP` is progression only and never decreases from spending
 - `Points` are the spendable balance used for redemptions and admin adjustments
 - `GET /api/v1/users/leaderboard` expects `scope=local|national`, `period=weekly|monthly`, and `Authorization: Bearer <access_token>`
 - `POST /api/v1/check-ins/scan` expects `qrToken`, `latitude`, and `longitude`. The user must be within the configured check-in radius of the restaurant QR location, and can check in once per restaurant per UTC meal window per day: breakfast (`05:00-10:59`), lunch (`11:00-16:59`), and dinner (`17:00-22:59`).
+- `POST /api/v1/restaurants/{restaurant_id}/receipt` expects `multipart/form-data` with `image`; the restaurant must have receipt upload enabled, and the reward is applied to the latest eligible unclaimed check-in by the authenticated user at that restaurant
 - When a user scans the wrong or invalid restaurant QR, `POST /api/v1/check-ins/scan` now returns clearer messages that explain whether the QR is unrecognized, does not match the restaurant, or the user is too far from the restaurant location.
 - `GET /api/v1/restaurants/nearby` sorts results by minimum distance when both `latitude` and `longitude` are present. Without coordinates it falls back to the explicit `city` query or the authenticated user's saved city.
 - `GET /api/v1/admin/restaurants/analytics/summary` lists check-in based analytics summaries for the dashboard restaurant table and accepts `range=last_7_days|last_30_days|last_90_days`.

@@ -108,7 +108,7 @@ export function validateSocialShare(body) {
   }
   return {
     shareType,
-    entityId: requiredString(body, 'entityId', { min: 1, max: 128 }),
+    entityId: optionalString(body, 'entityId', { min: 1, max: 128 }),
     platform: optionalString(body, 'platform', { min: 2, max: 50 }),
     shareUrl: optionalString(body, 'shareUrl', { max: 500 }),
   };

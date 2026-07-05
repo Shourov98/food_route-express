@@ -167,6 +167,7 @@ Total unique endpoints: 169
 ## Check Ins
 
 - GET /api/v1/check-ins/history
+- POST /api/v1/restaurants/{restaurantId}/receipt
 - POST /api/v1/check-ins/scan
 
 ## Cms
@@ -293,6 +294,8 @@ Total unique endpoints: 169
 ## Users / Social Share Reward
 
 - POST /api/v1/users/me/social-share-reward
+- GET /api/v1/users/me/share/check-ins/{checkinId}/preview
+- GET /api/v1/users/me/share/rewards/{redemptionId}/preview
 
 ## Users / Spins
 

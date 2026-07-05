@@ -108,6 +108,7 @@ function parseQrCode(body) {
 export function validateRestaurantCreate(body, file) {
   assertObject(body);
   requireImage(file);
+  const pointsPerCheckIn = requiredInteger(body, 'pointsPerCheckIn', { min: 0, max: 10_000 });
   return {
     name: requiredString(body, 'name', { min: 2, max: 120 }),
     address: requiredString(body, 'address', { min: 5, max: 255 }),
@@ -119,7 +120,11 @@ export function validateRestaurantCreate(body, file) {
     closingTime: requiredTime(body, 'closingTime'),
     imageUrl: null,
     qrCode: parseQrCode(body),
-    pointsPerCheckIn: requiredInteger(body, 'pointsPerCheckIn', { min: 0, max: 10_000 }),
+    pointsPerCheckIn,
+    receiptUploadEnabled: true,
+    pointsPerReceiptUpload: hasOwn(body, 'pointsPerReceiptUpload')
+      ? requiredInteger(body, 'pointsPerReceiptUpload', { min: 0, max: 10_000 })
+      : pointsPerCheckIn,
   };
 }
 
@@ -137,6 +142,10 @@ export function validateRestaurantUpdate(body) {
     imageUrl: optionalString(body, 'imageUrl') ?? null,
     qrCode: parseQrCode(body),
     pointsPerCheckIn: requiredInteger(body, 'pointsPerCheckIn', { min: 0, max: 10_000 }),
+    pointsPerReceiptUpload: hasOwn(body, 'pointsPerReceiptUpload')
+      ? requiredInteger(body, 'pointsPerReceiptUpload', { min: 0, max: 10_000 })
+      : undefined,
+    hasPointsPerReceiptUploadField: hasOwn(body, 'pointsPerReceiptUpload'),
   };
 }
 

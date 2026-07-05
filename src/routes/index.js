@@ -11,6 +11,7 @@ import { createPackageRouter } from '../modules/packages/packageRouter.js';
 import { createPlacementRouter } from '../modules/placements/placementRouter.js';
 import { createInternalProximityAlertRouter } from '../modules/proximityAlerts/proximityAlertRouter.js';
 import { createQrCodeRouter } from '../modules/qrCodes/qrCodeRouter.js';
+import { createReceiptUploadRouter } from '../modules/receiptUploads/receiptUploadRouter.js';
 import { createRestaurantDiscoveryRouter } from '../modules/restaurantDiscovery/restaurantDiscoveryRouter.js';
 import { createRestaurantRouter } from '../modules/restaurants/restaurantRouter.js';
 import {
@@ -54,6 +55,7 @@ export function registerRoutes(app, config) {
   app.use(`${config.apiV1Prefix}/internal/proximity-alerts`, createInternalProximityAlertRouter(config));
   app.use(`${config.apiV1Prefix}/restaurants/dishes`, createRestaurantDishRouter(config));
   app.use(`${config.apiV1Prefix}/restaurants`, createRestaurantDiscoveryRouter(config));
+  app.use(`${config.apiV1Prefix}/restaurants`, createReceiptUploadRouter(config));
   app.use(`${config.apiV1Prefix}/restaurants`, createReviewRouter(config));
   app.use(`${config.apiV1Prefix}/rewards`, createUserRewardCatalogRouter(config));
   app.use(`${config.apiV1Prefix}/rewards`, createRewardRedemptionRouter(config));

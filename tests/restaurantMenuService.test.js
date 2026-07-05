@@ -317,6 +317,8 @@ test('RestaurantService creates restaurant and default menu', async () => {
         token: 'token-1234',
       },
       pointsPerCheckIn: 25,
+      receiptUploadEnabled: true,
+      pointsPerReceiptUpload: 15,
     },
     image: { originalname: 'cover.png' },
   });
@@ -326,6 +328,8 @@ test('RestaurantService creates restaurant and default menu', async () => {
   assert.equal(result.imageUrl.includes('cover.png'), true);
   assert.equal(result.openingTime, '08:00');
   assert.equal(result.closingTime, '22:00');
+  assert.equal(result.receiptUploadEnabled, true);
+  assert.equal(result.pointsPerReceiptUpload, 15);
   assert.equal((await menuRepository.getByRestaurantId(result.id)).name, 'Cafe One Menu');
 });
 
