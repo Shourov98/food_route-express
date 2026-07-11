@@ -1,6 +1,6 @@
 import { validationError } from '../../core/ApplicationError.js';
 
-const ROUTE_STATUSES = new Set(['draft', 'active', 'under_review']);
+const ROUTE_STATUSES = new Set(['draft', 'active', 'paused', 'completed', 'expired']);
 
 function hasOwn(body, field) {
   return Object.prototype.hasOwnProperty.call(body, field);
@@ -17,6 +17,9 @@ function optionalString(body, field, { min = 0, max = Infinity } = {}) {
     return undefined;
   }
   const value = body[field];
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
   if (typeof value !== 'string') {
     throw validationError(`Field '${field}' should be a string.`);
   }
@@ -24,6 +27,47 @@ function optionalString(body, field, { min = 0, max = Infinity } = {}) {
     throw validationError(`Field '${field}' length is invalid.`);
   }
   return value;
+}
+
+function optionalBoolean(body, field) {
+  if (!hasOwn(body, field) || body[field] === undefined || body[field] === null) {
+    return undefined;
+  }
+  if (typeof body[field] === 'boolean') {
+    return body[field];
+  }
+  if (body[field] === 'true') {
+    return true;
+  }
+  if (body[field] === 'false') {
+    return false;
+  }
+  throw validationError(`Field '${field}' should be a boolean.`);
+}
+
+function optionalInteger(body, field, { min = -Infinity, max = Infinity } = {}) {
+  if (!hasOwn(body, field) || body[field] === undefined || body[field] === null || body[field] === '') {
+    return undefined;
+  }
+  const value = Number(body[field]);
+  if (!Number.isInteger(value)) {
+    throw validationError(`Field '${field}' should be an integer.`);
+  }
+  if (value < min || value > max) {
+    throw validationError(`Field '${field}' is out of range.`);
+  }
+  return value;
+}
+
+function optionalDate(body, field) {
+  if (!hasOwn(body, field) || body[field] === undefined || body[field] === null || body[field] === '') {
+    return undefined;
+  }
+  const date = body[field] instanceof Date ? body[field] : new Date(body[field]);
+  if (Number.isNaN(date.getTime())) {
+    throw validationError(`Field '${field}' should be a valid date.`);
+  }
+  return date;
 }
 
 function requiredString(body, field, options) {
@@ -76,23 +120,57 @@ function parseStatus(body, required = false) {
 
 export function validateRouteCreate(body) {
   assertObject(body);
+  const startDate = optionalDate(body, 'startDate');
+  const endDate = optionalDate(body, 'endDate');
+  if (startDate && endDate && endDate <= startDate) {
+    throw validationError("Field 'endDate' must be after 'startDate'.");
+  }
   return {
     routeName: parseRouteName(body, true),
     description: requiredString(body, 'description', { min: 5, max: 1000 }),
     city: optionalString(body, 'city', { min: 2, max: 120 }),
+    zone: optionalString(body, 'zone', { min: 2, max: 120 }),
+    neighborhood: optionalString(body, 'neighborhood', { min: 2, max: 120 }),
     restaurantIds: parseRestaurantIds(body.restaurantIds, true),
     status: parseStatus(body, true),
+    startDate,
+    endDate,
+    requiredVisits: optionalInteger(body, 'requiredVisits', { min: 1 }) ?? body.restaurantIds.length,
+    mandatoryOrder: optionalBoolean(body, 'mandatoryOrder') ?? false,
+    pointsPerReceiptUpload: optionalInteger(body, 'pointsPerReceiptUpload', { min: 0 }) ?? 0,
+    completionBonus: optionalInteger(body, 'completionBonus', { min: 0 }) ?? 0,
+    limitPerUser: optionalInteger(body, 'limitPerUser', { min: 1 }) ?? 1,
+    repeatable: optionalBoolean(body, 'repeatable') ?? false,
+    cooldownMinutes: optionalInteger(body, 'cooldownMinutes', { min: 60 }) ?? 60,
   };
 }
 
 export function validateRouteUpdate(body) {
   assertObject(body);
+  const startDate = optionalDate(body, 'startDate');
+  const endDate = optionalDate(body, 'endDate');
+  if (startDate && endDate && endDate <= startDate) {
+    throw validationError("Field 'endDate' must be after 'startDate'.");
+  }
   return {
     routeName: parseRouteName(body, false),
     description: optionalString(body, 'description', { min: 5, max: 1000 }),
     city: optionalString(body, 'city', { min: 2, max: 120 }),
+    zone: optionalString(body, 'zone', { min: 2, max: 120 }),
+    neighborhood: optionalString(body, 'neighborhood', { min: 2, max: 120 }),
     restaurantIds: hasOwn(body, 'restaurantIds') ? parseRestaurantIds(body.restaurantIds, false) : undefined,
     status: parseStatus(body, false),
+    startDate,
+    hasStartDateField: hasOwn(body, 'startDate'),
+    endDate,
+    hasEndDateField: hasOwn(body, 'endDate'),
+    requiredVisits: optionalInteger(body, 'requiredVisits', { min: 1 }),
+    mandatoryOrder: optionalBoolean(body, 'mandatoryOrder'),
+    pointsPerReceiptUpload: optionalInteger(body, 'pointsPerReceiptUpload', { min: 0 }),
+    completionBonus: optionalInteger(body, 'completionBonus', { min: 0 }),
+    limitPerUser: optionalInteger(body, 'limitPerUser', { min: 1 }),
+    repeatable: optionalBoolean(body, 'repeatable'),
+    cooldownMinutes: optionalInteger(body, 'cooldownMinutes', { min: 60 }),
   };
 }
 

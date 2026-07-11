@@ -214,9 +214,40 @@ test('AuthService register returns FastAPI-compatible response data', async () =
   assert.equal(result.referralCode.length, 8);
   assert.equal(emailService.otps.length, 1);
   assert.equal((await userRepository.getByEmail('jane@example.com')).uid, result.uid);
+  assert.equal(xpService.pointAwards.length, 0);
+});
+
+test('AuthService awards signup bonus only after register OTP verification', async () => {
+  const { service, emailService, xpService } = createService();
+
+  await service.register({
+    fullname: 'Jane Doe',
+    email: 'jane@example.com',
+    gender: 'female',
+    dateOfBirth: '1996-05-14',
+    city: 'Dhaka',
+    country: 'Bangladesh',
+    password: 'Password123',
+  });
+
+  assert.equal(xpService.pointAwards.length, 0);
+
+  await service.verifyRegisterOtp({
+    email: 'jane@example.com',
+    otp: emailService.otps[0].otp,
+  });
+
   assert.equal(xpService.pointAwards.length, 1);
   assert.equal(xpService.pointAwards[0].delta, 100);
   assert.equal(xpService.pointAwards[0].sourceType, 'signup_bonus');
+});
+
+test('AuthService forgotPassword is generic for missing emails', async () => {
+  const { service, emailService } = createService();
+
+  await service.forgotPassword('missing@example.com');
+
+  assert.equal(emailService.otps.length, 0);
 });
 
 test('AuthService login rejects unverified users with matching code', async () => {

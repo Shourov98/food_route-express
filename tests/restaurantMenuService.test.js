@@ -412,7 +412,12 @@ test('MenuService creates and updates menu items', async () => {
 });
 
 test('RestaurantService builds check-in based analytics for a restaurant', async () => {
-  const createdAt = (value) => new Date(value);
+  const createdAtDaysAgo = (daysAgo, hour) => {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - daysAgo);
+    date.setUTCHours(hour, 0, 0, 0);
+    return date;
+  };
   const { restaurantService, restaurantRepository } = createServices({
     checkins: [
       {
@@ -422,7 +427,7 @@ test('RestaurantService builds check-in based analytics for a restaurant', async
         userEmail: 'jane@example.com',
         restaurantId: 'restaurant-1',
         awardedPoints: 20,
-        createdAt: createdAt('2026-05-20T08:00:00.000Z'),
+        createdAt: createdAtDaysAgo(2, 8),
       },
       {
         id: 'checkin-2',
@@ -431,7 +436,7 @@ test('RestaurantService builds check-in based analytics for a restaurant', async
         userEmail: 'jane@example.com',
         restaurantId: 'restaurant-1',
         awardedPoints: 20,
-        createdAt: createdAt('2026-05-21T18:00:00.000Z'),
+        createdAt: createdAtDaysAgo(1, 18),
       },
       {
         id: 'checkin-3',
@@ -440,7 +445,7 @@ test('RestaurantService builds check-in based analytics for a restaurant', async
         userEmail: 'john@example.com',
         restaurantId: 'restaurant-1',
         awardedPoints: 10,
-        createdAt: createdAt('2026-05-21T19:00:00.000Z'),
+        createdAt: createdAtDaysAgo(1, 19),
       },
     ],
   });

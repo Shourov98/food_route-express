@@ -1,6 +1,6 @@
 function toDate(value) {
   if (!value) {
-    return new Date();
+    return null;
   }
   if (value instanceof Date) {
     return value;
@@ -17,11 +17,22 @@ function routeFromData(data) {
     routeName: data.routeName,
     description: data.description,
     city: data.city,
+    zone: data.zone ?? null,
+    neighborhood: data.neighborhood ?? null,
     restaurantIds: Array.isArray(data.restaurantIds) ? [...data.restaurantIds] : [],
     status: data.status ?? 'draft',
+    startDate: toDate(data.startDate) ?? null,
+    endDate: toDate(data.endDate) ?? null,
+    requiredVisits: Number(data.requiredVisits ?? 0),
+    mandatoryOrder: Boolean(data.mandatoryOrder),
+    pointsPerReceiptUpload: Number(data.pointsPerReceiptUpload ?? 0),
+    completionBonus: Number(data.completionBonus ?? 0),
+    limitPerUser: Number(data.limitPerUser ?? 1),
+    repeatable: Boolean(data.repeatable),
+    cooldownMinutes: Number(data.cooldownMinutes ?? 60),
     createdBy: data.createdBy,
-    createdAt: toDate(data.createdAt),
-    updatedAt: toDate(data.updatedAt),
+    createdAt: toDate(data.createdAt) ?? new Date(),
+    updatedAt: toDate(data.updatedAt) ?? toDate(data.createdAt) ?? new Date(),
   };
 }
 

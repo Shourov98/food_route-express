@@ -61,6 +61,8 @@ function loginResponseData(user, signInResult) {
   };
 }
 
+const REFERRAL_CODE_MAX_ATTEMPTS = 5;
+
 export class AuthService {
   constructor({
     userRepository,
@@ -117,7 +119,7 @@ export class AuthService {
     }
 
     const now = new Date();
-    const referralCode = generateReferralCode((code) => false);
+    const referralCode = await this.generateUniqueReferralCode();
     const user = {
       uid: identityUser.uid,
       fullname: payload.fullname,
@@ -147,9 +149,22 @@ export class AuthService {
     } else {
       await this.issueOtp(payload.email, OTP_PURPOSE.REGISTER_VERIFY);
     }
-    await this.applySignupBonusIfEligible(user.uid);
-
     return registerResponseData(user);
+  }
+
+  async generateUniqueReferralCode() {
+    for (let attempt = 0; attempt < REFERRAL_CODE_MAX_ATTEMPTS; attempt += 1) {
+      const code = generateReferralCode(() => false);
+      if (!(await this.userRepository.getByReferralCode(code))) {
+        return code;
+      }
+    }
+
+    throw new ApplicationError({
+      code: 'referral_code_generation_failed',
+      message: 'A unique referral code could not be generated right now.',
+      statusCode: 500,
+    });
   }
 
   async applySignupBonusIfEligible(userUid) {
@@ -159,6 +174,9 @@ export class AuthService {
 
     const user = await this.userRepository.getByUid(userUid);
     if (!user) {
+      return null;
+    }
+    if (!user.isVerified) {
       return null;
     }
 
@@ -223,6 +241,7 @@ export class AuthService {
     await this.verifyOtp(payload.email, payload.otp, OTP_PURPOSE.REGISTER_VERIFY, 'No active verification OTP found.');
     await this.userRepository.markVerified(payload.email);
     await this.identityProvider.markEmailVerified(user.uid);
+    await this.applySignupBonusIfEligible(user.uid);
     return verifyOtpResponseData(payload.email, true);
   }
 
@@ -259,8 +278,10 @@ export class AuthService {
   }
 
   async forgotPassword(email) {
-    const user = await this.getUserOrRaise(email);
-    this.ensureUserCanAuthenticate(user);
+    const user = await this.userRepository.getByEmail(email);
+    if (!user || user.isBlocked || !user.isVerified) {
+      return;
+    }
     if (this.config.authPasswordResetMode === 'email_link') {
       await this.sendPasswordResetEmail(email);
       return;
@@ -302,8 +323,10 @@ export class AuthService {
   }
 
   async sendPasswordResetEmail(email) {
-    const user = await this.getUserOrRaise(email);
-    this.ensureUserCanAuthenticate(user);
+    const user = await this.userRepository.getByEmail(email);
+    if (!user || user.isBlocked || !user.isVerified) {
+      return;
+    }
     const link = await this.identityProvider.generatePasswordResetLink(email);
     await this.emailService.sendPasswordResetLink({ email, link });
   }

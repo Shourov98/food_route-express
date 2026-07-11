@@ -13,8 +13,7 @@ export function generateReferralCode(existingCodeLookup) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
   for (;;) {
-    const bytes = crypto.randomBytes(8);
-    const code = Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('');
+    const code = Array.from({ length: 8 }, () => alphabet[crypto.randomInt(0, alphabet.length)]).join('');
     if (!existingCodeLookup(code)) {
       return code;
     }

@@ -136,11 +136,25 @@ test('RouteService creates route with route-enabled restaurants', async () => {
       city: 'Dhaka',
       restaurantIds: ['restaurant-1', 'restaurant-2'],
       status: 'draft',
+      startDate: new Date('2026-08-01T00:00:00.000Z'),
+      endDate: new Date('2026-08-14T23:59:59.000Z'),
+      requiredVisits: 1,
+      mandatoryOrder: true,
+      pointsPerReceiptUpload: 25,
+      completionBonus: 100,
+      limitPerUser: 1,
+      repeatable: false,
+      cooldownMinutes: 60,
     },
   });
 
   assert.equal(result.routeName, 'Dhaka Trail');
   assert.equal(result.restaurantCount, 2);
+  assert.equal(result.requiredVisits, 1);
+  assert.equal(result.mandatoryOrder, true);
+  assert.equal(result.pointsPerReceiptUpload, 25);
+  assert.equal(result.completionBonus, 100);
+  assert.equal(result.cooldownMinutes, 60);
 });
 
 test('RouteService lists active city-matched routes for users', async () => {

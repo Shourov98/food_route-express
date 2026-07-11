@@ -72,6 +72,26 @@ function restaurantSummary(record) {
   return restaurantSearchItem(record);
 }
 
+function assertRequiredVisitsPossible(requiredVisits, restaurantCount) {
+  if (requiredVisits > restaurantCount) {
+    throw new ApplicationError({
+      code: 'route_required_visits_invalid',
+      message: 'Required visits cannot exceed the number of participating restaurants.',
+      statusCode: 400,
+    });
+  }
+}
+
+function assertRouteDateRange({ startDate, endDate }) {
+  if (startDate && endDate && endDate <= startDate) {
+    throw new ApplicationError({
+      code: 'route_date_range_invalid',
+      message: 'Route end date must be after the start date.',
+      statusCode: 400,
+    });
+  }
+}
+
 const ANALYTICS_RANGE_DAYS = {
   last_7_days: 7,
   last_30_days: 30,
@@ -103,18 +123,33 @@ export class RouteService {
   async createRoute({ accessToken, payload }) {
     const admin = await this.getCurrentAdmin(accessToken);
     const restaurants = await this.getValidRestaurants(payload.restaurantIds);
+    const requiredVisits = payload.requiredVisits ?? restaurants.length;
+    assertRequiredVisitsPossible(requiredVisits, restaurants.length);
     const now = new Date();
-    const created = await this.routeRepository.create({
+    const record = {
       id: randomUUID(),
       routeName: payload.routeName,
       description: payload.description,
       city: deriveRouteCity(restaurants, payload.city ?? null),
+      zone: payload.zone ?? null,
+      neighborhood: payload.neighborhood ?? null,
       restaurantIds: restaurants.map((restaurant) => restaurant.id),
       status: payload.status,
+      startDate: payload.startDate ?? null,
+      endDate: payload.endDate ?? null,
+      requiredVisits,
+      mandatoryOrder: payload.mandatoryOrder ?? false,
+      pointsPerReceiptUpload: payload.pointsPerReceiptUpload ?? 0,
+      completionBonus: payload.completionBonus ?? 0,
+      limitPerUser: payload.limitPerUser ?? 1,
+      repeatable: payload.repeatable ?? false,
+      cooldownMinutes: payload.cooldownMinutes ?? 60,
       createdBy: admin.uid,
       createdAt: now,
       updatedAt: now,
-    });
+    };
+    assertRouteDateRange(record);
+    const created = await this.routeRepository.create(record);
     return this.toResponse(created, { restaurants });
   }
 
@@ -123,15 +158,29 @@ export class RouteService {
     const existing = await this.getRouteOrError(routeId);
     const restaurantIds = payload.restaurantIds ?? existing.restaurantIds;
     const restaurants = await this.getValidRestaurants(restaurantIds);
+    const requiredVisits = payload.requiredVisits ?? existing.requiredVisits ?? restaurants.length;
+    assertRequiredVisitsPossible(requiredVisits, restaurants.length);
     const updated = {
       ...existing,
       routeName: payload.routeName ?? existing.routeName,
       description: payload.description ?? existing.description,
       city: deriveRouteCity(restaurants, payload.city ?? existing.city ?? null),
+      zone: payload.zone ?? existing.zone ?? null,
+      neighborhood: payload.neighborhood ?? existing.neighborhood ?? null,
       restaurantIds: restaurants.map((restaurant) => restaurant.id),
       status: payload.status ?? existing.status,
+      startDate: payload.hasStartDateField ? payload.startDate ?? null : existing.startDate ?? null,
+      endDate: payload.hasEndDateField ? payload.endDate ?? null : existing.endDate ?? null,
+      requiredVisits,
+      mandatoryOrder: payload.mandatoryOrder ?? existing.mandatoryOrder ?? false,
+      pointsPerReceiptUpload: payload.pointsPerReceiptUpload ?? existing.pointsPerReceiptUpload ?? 0,
+      completionBonus: payload.completionBonus ?? existing.completionBonus ?? 0,
+      limitPerUser: payload.limitPerUser ?? existing.limitPerUser ?? 1,
+      repeatable: payload.repeatable ?? existing.repeatable ?? false,
+      cooldownMinutes: payload.cooldownMinutes ?? existing.cooldownMinutes ?? 60,
       updatedAt: new Date(),
     };
+    assertRouteDateRange(updated);
     await this.routeRepository.update(routeId, updated);
     return this.toResponse(updated, { restaurants });
   }
@@ -346,10 +395,21 @@ export class RouteService {
       routeName: record.routeName,
       description: record.description,
       city: record.city,
+      zone: record.zone ?? null,
+      neighborhood: record.neighborhood ?? null,
       restaurantIds: record.restaurantIds,
       restaurants: restaurantRecords.map(restaurantSummary),
       restaurantCount: restaurantRecords.length,
       status: record.status,
+      startDate: record.startDate ?? null,
+      endDate: record.endDate ?? null,
+      requiredVisits: record.requiredVisits || restaurantRecords.length,
+      mandatoryOrder: Boolean(record.mandatoryOrder),
+      pointsPerReceiptUpload: Number(record.pointsPerReceiptUpload ?? 0),
+      completionBonus: Number(record.completionBonus ?? 0),
+      limitPerUser: Number(record.limitPerUser ?? 1),
+      repeatable: Boolean(record.repeatable),
+      cooldownMinutes: Number(record.cooldownMinutes ?? 60),
       createdBy: record.createdBy,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
