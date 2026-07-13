@@ -147,16 +147,17 @@ export class XpService {
     if (delta <= 0) {
       return null;
     }
-    if (await this.xpRepository.getBySource({ sourceType, sourceId, userId })) {
-      return null;
-    }
+    // BR-002/BR-003: race-free idempotent award. The repository uses a
+    // Firestore transaction so two concurrent scans with the same sourceId
+    // cannot both insert and double-award XP. Returns the freshly created
+    // record on success, or `null` if a row already existed for this triple.
     const currentXp = await this.getTotalXp(userId);
     const remainingCapacity = Math.max(0, MAX_XP - currentXp);
     if (remainingCapacity === 0) {
       return null;
     }
     const appliedDelta = Math.min(delta, remainingCapacity);
-    return this.xpRepository.create({
+    return this.xpRepository.createIfAbsent({
       id: crypto.randomUUID(),
       userId,
       sourceType,
@@ -177,11 +178,9 @@ export class XpService {
     if (delta <= 0) {
       return null;
     }
-    if (await this.pointsRepository.getBySource({ sourceType, sourceId, userId })) {
-      return null;
-    }
+    // BR-002/BR-003: race-free idempotent wallet award. See awardXp above.
     const currentPoints = await this.getTotalPoints(userId);
-    return this.pointsRepository.create({
+    return this.pointsRepository.createIfAbsent({
       id: crypto.randomUUID(),
       userId,
       sourceType,

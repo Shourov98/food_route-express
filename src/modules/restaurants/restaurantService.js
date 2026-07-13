@@ -36,6 +36,8 @@ function restaurantResponse(record) {
     qrCode: record.qrCode,
     pointsPerCheckIn: record.pointsPerCheckIn,
     checkinRadiusMeters: record.checkinRadiusMeters ?? 100,
+    qrRequired: record.qrRequired ?? true,
+    pointsPerSocialShare: record.pointsPerSocialShare ?? 0,
     receiptUploadEnabled: Boolean(record.receiptUploadEnabled),
     pointsPerReceiptUpload: record.pointsPerReceiptUpload ?? 0,
     status: record.status,
@@ -203,6 +205,8 @@ export class RestaurantService {
       qrCode: payload.qrCode,
       pointsPerCheckIn: payload.pointsPerCheckIn,
       checkinRadiusMeters: payload.checkinRadiusMeters,
+      qrRequired: payload.qrRequired,
+      pointsPerSocialShare: payload.pointsPerSocialShare,
       receiptUploadEnabled: payload.receiptUploadEnabled,
       pointsPerReceiptUpload: payload.pointsPerReceiptUpload,
       enabledPackages: [],
@@ -239,6 +243,12 @@ export class RestaurantService {
     const pointsPerReceiptUpload = payload.hasPointsPerReceiptUploadField
       ? payload.pointsPerReceiptUpload
       : (existing.pointsPerReceiptUpload ?? payload.pointsPerCheckIn);
+    const pointsPerSocialShare = payload.hasPointsPerSocialShareField
+      ? payload.pointsPerSocialShare
+      : (existing.pointsPerSocialShare ?? 0);
+    const qrRequired = payload.hasQrRequiredField
+      ? payload.qrRequired
+      : (existing.qrRequired ?? true);
 
     const updated = {
       ...existing,
@@ -257,6 +267,8 @@ export class RestaurantService {
       qrCode: payload.qrCode,
       pointsPerCheckIn: payload.pointsPerCheckIn,
       checkinRadiusMeters: payload.checkinRadiusMeters,
+      qrRequired,
+      pointsPerSocialShare,
       receiptUploadEnabled: true,
       pointsPerReceiptUpload,
       createdBy: existing.createdBy || admin.uid,

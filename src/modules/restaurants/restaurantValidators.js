@@ -125,6 +125,13 @@ export function validateRestaurantCreate(body, file) {
     qrCode: parseQrCode(body),
     pointsPerCheckIn,
     checkinRadiusMeters,
+    // BR-003: per-restaurant toggle for whether a QR scan is required.
+    // Defaults to true (current MVP behavior). Admins can opt out for
+    // restaurants that want GPS-only check-in.
+    qrRequired: optionalBoolean(body, 'qrRequired') ?? true,
+    pointsPerSocialShare: hasOwn(body, 'pointsPerSocialShare')
+      ? requiredInteger(body, 'pointsPerSocialShare', { min: 0, max: 10_000 })
+      : 0,
     receiptUploadEnabled: true,
     pointsPerReceiptUpload: hasOwn(body, 'pointsPerReceiptUpload')
       ? requiredInteger(body, 'pointsPerReceiptUpload', { min: 0, max: 10_000 })
@@ -149,9 +156,15 @@ export function validateRestaurantUpdate(body) {
     checkinRadiusMeters: hasOwn(body, 'checkinRadiusMeters')
       ? requiredInteger(body, 'checkinRadiusMeters', { min: 10, max: 5_000 })
       : 100,
+    qrRequired: optionalBoolean(body, 'qrRequired'),
+    pointsPerSocialShare: hasOwn(body, 'pointsPerSocialShare')
+      ? requiredInteger(body, 'pointsPerSocialShare', { min: 0, max: 10_000 })
+      : undefined,
     pointsPerReceiptUpload: hasOwn(body, 'pointsPerReceiptUpload')
       ? requiredInteger(body, 'pointsPerReceiptUpload', { min: 0, max: 10_000 })
       : undefined,
+    hasQrRequiredField: hasOwn(body, 'qrRequired'),
+    hasPointsPerSocialShareField: hasOwn(body, 'pointsPerSocialShare'),
     hasPointsPerReceiptUploadField: hasOwn(body, 'pointsPerReceiptUpload'),
   };
 }

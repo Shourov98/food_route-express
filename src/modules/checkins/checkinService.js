@@ -84,6 +84,19 @@ export class CheckInService {
         statusCode: 403,
       });
     }
+    // BR-003: per-restaurant QR enforcement. The MVP rule (per product
+    // owner) is "GPS AND QR both required" — so we always require a QR
+    // token here. The flag is plumbed end-to-end so that future releases
+    // can opt a restaurant into GPS-only check-in by toggling `qrRequired`
+    // to false in the dashboard.
+    const qrRequired = restaurant.qrRequired !== false;
+    if (qrRequired && (!qrToken || qrToken.length < 4)) {
+      throw new ApplicationError({
+        code: 'qr_required',
+        message: 'This restaurant requires a QR code scan to check in.',
+        statusCode: 400,
+      });
+    }
     const now = this.nowProvider();
     this.assertFreshAccurateLocation({ accuracy, locationCapturedAt, now });
     this.assertWithinCheckinRange({ restaurant, latitude, longitude });
@@ -102,9 +115,12 @@ export class CheckInService {
       city: user.city || '',
       country: user.country || '',
     });
+    // awardXp is now race-free via firestore.runTransaction. Returns null
+    // when a row for this sourceId already exists (concurrent scan, retry,
+    // or duplicate card-tap), which we treat as a no-op success.
     const awardedXp = xpRecord?.xpDelta ?? 0;
     let pointsRecord = null;
-    if (awardedXp > 0) {
+    if (xpRecord && awardedXp > 0) {
       pointsRecord = await this.xpService.awardPoints({
         userId: user.uid,
         delta: awardedXp,

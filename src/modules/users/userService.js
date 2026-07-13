@@ -305,16 +305,45 @@ export class UserService {
   }
 
   async resolveSocialSharePoints({ userId, shareType, entityId }) {
+    // Default fallback points by share type. Restaurants may override these
+    // defaults via the `pointsPerSocialShare` admin field (BR-003).
+    const DEFAULT_POINTS = {
+      checkin: 50,
+      receipt: 50,
+      reward: 100,
+    };
+
+    let fallbackPoints = DEFAULT_POINTS[shareType];
+    if (typeof fallbackPoints !== 'number') {
+      fallbackPoints = 50;
+    }
+
+    let restaurantId = null;
+
     if (shareType === 'checkin') {
-      await this.requireOwnedCheckin({ userId, checkinId: entityId });
-      return 50;
+      const checkin = await this.requireOwnedCheckin({ userId, checkinId: entityId });
+      restaurantId = checkin?.restaurantId ?? null;
+    } else if (shareType === 'receipt') {
+      const receipt = await this.requireOwnedReceiptUpload({
+        userId,
+        receiptUploadId: entityId,
+      });
+      restaurantId = receipt?.restaurantId ?? null;
+    } else {
+      await this.requireOwnedRewardRedemption({ userId, redemptionId: entityId });
+      // Reward shares don't tie to a single restaurant, so we cannot look
+      // up `pointsPerSocialShare` here. Fall back to the default.
     }
-    if (shareType === 'receipt') {
-      await this.requireOwnedReceiptUpload({ userId, receiptUploadId: entityId });
-      return 50;
+
+    if (restaurantId && this.restaurantRepository) {
+      const restaurant = await this.restaurantRepository.getById(restaurantId);
+      const configured = Number(restaurant?.pointsPerSocialShare);
+      if (Number.isFinite(configured) && configured >= 0) {
+        return configured;
+      }
     }
-    await this.requireOwnedRewardRedemption({ userId, redemptionId: entityId });
-    return 100;
+
+    return fallbackPoints;
   }
 
   async resolveSocialShareEntityId({ userId, shareType, entityId }) {

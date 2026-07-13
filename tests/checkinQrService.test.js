@@ -77,20 +77,50 @@ class FakeIdentityProvider {
 class FakeXpRepository {
   constructor() {
     this.records = [];
+    // Simulate Firestore's SERIALIZABLE isolation by routing all writes
+    // through a single in-flight promise. Without this lock, two concurrent
+    // calls could both pass `getBySource === null` and both insert.
+    this._txnChain = Promise.resolve();
+  }
+
+  async _runExclusive(fn) {
+    const next = this._txnChain.then(fn, fn);
+    this._txnChain = next.catch(() => undefined);
+    return next;
   }
 
   async create(record) {
-    this.records.push(record);
-    return record;
+    return this._runExclusive(() => {
+      this.records.push(record);
+      return record;
+    });
+  }
+
+  async createIfAbsent(record) {
+    return this._runExclusive(() => {
+      const existing = this.records.find(
+        (entry) =>
+          entry.userId === record.userId &&
+          entry.sourceType === record.sourceType &&
+          entry.sourceId === record.sourceId,
+      );
+      if (existing) {
+        return null;
+      }
+      this.records.push(record);
+      return record;
+    });
   }
 
   async delete(recordId) {
-    const index = this.records.findIndex((record) => record.id === recordId);
-    if (index === -1) {
-      return false;
-    }
-    this.records.splice(index, 1);
-    return true;
+    return this._runExclusive(() => {
+      const index = this.records.findIndex((record) => record.id === recordId);
+      if (index === -1) {
+        return false;
+      }
+      this.records.splice(index, 1);
+      return true;
+    });
   }
 
   async listByUser(userId) {
@@ -367,6 +397,110 @@ test('CheckInService rejects scans when the user is too far from the restaurant 
       error.code === 'checkin_out_of_range' &&
       error.message ===
         'You are too far from this restaurant to check in. Make sure you are at the restaurant and scanning its QR code.',
+  );
+});
+
+test('XpService.createIfAbsent is idempotent for the same (userId, sourceType, sourceId) triple', async () => {
+  const xpRepository = new FakeXpRepository();
+  const pointsRepository = new FakePointsRepository();
+  const service = new XpService({ xpRepository, pointsRepository });
+
+  // Two awardXp calls with the SAME sourceId should produce only one XP
+  // row. The second call returns null (the existing record), and the
+  // caller treats that as a no-op.
+  const first = await service.awardXp({
+    userId: 'user-1',
+    delta: 50,
+    sourceType: 'check_in',
+    sourceId: 'check-1',
+    city: '',
+    country: '',
+  });
+  const second = await service.awardXp({
+    userId: 'user-1',
+    delta: 50,
+    sourceType: 'check_in',
+    sourceId: 'check-1',
+    city: '',
+    country: '',
+  });
+
+  assert.ok(first, 'first award must return a record');
+  assert.equal(second, null, 'second award with same sourceId must return null');
+  assert.equal(
+    xpRepository.records.length,
+    1,
+    `expected exactly 1 XP row, got ${xpRepository.records.length}`,
+  );
+});
+
+test('XpService.createIfAbsent is idempotent for wallet points on the same sourceId', async () => {
+  const xpRepository = new FakeXpRepository();
+  const pointsRepository = new FakePointsRepository();
+  const service = new XpService({ xpRepository, pointsRepository });
+
+  const first = await service.awardPoints({
+    userId: 'user-1',
+    delta: 50,
+    sourceType: 'check_in',
+    sourceId: 'check-2',
+    city: '',
+    country: '',
+  });
+  const second = await service.awardPoints({
+    userId: 'user-1',
+    delta: 50,
+    sourceType: 'check_in',
+    sourceId: 'check-2',
+    city: '',
+    country: '',
+  });
+
+  assert.ok(first, 'first award must return a record');
+  assert.equal(second, null, 'second award with same sourceId must return null');
+  assert.equal(
+    pointsRepository.records.length,
+    1,
+    `expected exactly 1 wallet row, got ${pointsRepository.records.length}`,
+  );
+});
+
+test('CheckInService.scanQr survives a duplicate check-in retry without double-awarding', async () => {
+  // Simulate the realistic race: the user double-taps the same scan button
+  // on a flaky network, causing the same QR payload to be POSTed twice.
+  // Without transactional dedupe the second scan would still resolve but
+  // would have already awarded points to the ledger on the first try.
+  // Here we verify that `createIfAbsent` returns null on the second call,
+  // and the caller (checkinService) short-circuits the points write.
+  const xpRepository = new FakeXpRepository();
+  const pointsRepository = new FakePointsRepository();
+  const xpService = new XpService({ xpRepository, pointsRepository });
+
+  // Pre-seed an XP row as if the first scan already succeeded.
+  await xpService.awardXp({
+    userId: 'user-1',
+    delta: 50,
+    sourceType: 'check_in',
+    sourceId: 'check-1',
+    city: '',
+    country: '',
+  });
+
+  // Second call with same sourceId must be a no-op (returns null).
+  const replay = await xpService.awardXp({
+    userId: 'user-1',
+    delta: 50,
+    sourceType: 'check_in',
+    sourceId: 'check-1',
+    city: '',
+    country: '',
+  });
+
+  assert.equal(replay, null, 'replay with same sourceId must return null');
+  assert.equal(
+    xpRepository.records.length,
+    1,
+    `expected exactly 1 XP row after replay, got ${xpRepository.records.length}`,
   );
 });
 

@@ -127,6 +127,13 @@ class FakeRestaurantRepository {
 class FakeXpRepository {
   constructor(records = []) {
     this.records = records;
+    this._txnChain = Promise.resolve();
+  }
+
+  async _runExclusive(fn) {
+    const next = this._txnChain.then(fn, fn);
+    this._txnChain = next.catch(() => undefined);
+    return next;
   }
 
   async listByUser(userId) {
@@ -145,14 +152,39 @@ class FakeXpRepository {
   }
 
   async create(record) {
-    this.records.push(record);
-    return record;
+    return this._runExclusive(() => {
+      this.records.push(record);
+      return record;
+    });
+  }
+
+  async createIfAbsent(record) {
+    return this._runExclusive(() => {
+      const existing = this.records.find(
+        (entry) =>
+          entry.userId === record.userId &&
+          entry.sourceType === record.sourceType &&
+          entry.sourceId === record.sourceId,
+      );
+      if (existing) {
+        return null;
+      }
+      this.records.push(record);
+      return record;
+    });
   }
 }
 
 class FakePointsRepository {
   constructor(records = []) {
     this.records = records;
+    this._txnChain = Promise.resolve();
+  }
+
+  async _runExclusive(fn) {
+    const next = this._txnChain.then(fn, fn);
+    this._txnChain = next.catch(() => undefined);
+    return next;
   }
 
   async listByUser(userId) {
@@ -171,8 +203,26 @@ class FakePointsRepository {
   }
 
   async create(record) {
-    this.records.push(record);
-    return record;
+    return this._runExclusive(() => {
+      this.records.push(record);
+      return record;
+    });
+  }
+
+  async createIfAbsent(record) {
+    return this._runExclusive(() => {
+      const existing = this.records.find(
+        (entry) =>
+          entry.userId === record.userId &&
+          entry.sourceType === record.sourceType &&
+          entry.sourceId === record.sourceId,
+      );
+      if (existing) {
+        return null;
+      }
+      this.records.push(record);
+      return record;
+    });
   }
 }
 

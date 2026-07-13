@@ -129,6 +129,20 @@ class FakePointsRepository {
     this.records.push(record);
     return record;
   }
+
+  async createIfAbsent(record) {
+    const existing = this.records.find(
+      (entry) =>
+        entry.userId === record.userId &&
+        entry.sourceType === record.sourceType &&
+        entry.sourceId === record.sourceId,
+    );
+    if (existing) {
+      return null;
+    }
+    this.records.push(record);
+    return record;
+  }
 }
 
 class FakeXpRepository {
@@ -138,6 +152,20 @@ class FakeXpRepository {
 
   async listByUser(userId) {
     return this.records.filter((record) => record.userId === userId);
+  }
+
+  async createIfAbsent(record) {
+    const existing = this.records.find(
+      (entry) =>
+        entry.userId === record.userId &&
+        entry.sourceType === record.sourceType &&
+        entry.sourceId === record.sourceId,
+    );
+    if (existing) {
+      return null;
+    }
+    this.records.push(record);
+    return record;
   }
 }
 
