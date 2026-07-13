@@ -61,6 +61,11 @@ export function errorHandler(err, req, res, next) {
         ? 'Unexpected error occurred. Please contact support with requestId.'
         : 'Request could not be processed.');
 
+  // ApplicationError instances may carry a `details` object (e.g. distance +
+  // radius for check-in failures). Propagate it so the mobile client can
+  // render a precise, user-facing message instead of guessing.
+  const details = err?.details;
+
   const logPayload = {
     requestId,
     method: req.method,
@@ -69,6 +74,7 @@ export function errorHandler(err, req, res, next) {
     statusCode,
     code,
     message,
+    details: details ?? undefined,
   };
 
   if (statusCode >= 500) {
@@ -81,5 +87,9 @@ export function errorHandler(err, req, res, next) {
     console.warn('Handled request error', logPayload);
   }
 
-  sendError(res, statusCode, code, message, { requestId, path: req.path });
+  sendError(res, statusCode, code, message, {
+    requestId,
+    path: req.path,
+    details,
+  });
 }

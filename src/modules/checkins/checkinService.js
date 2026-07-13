@@ -271,11 +271,22 @@ export class CheckInService {
     );
     const maxDistanceKm = Math.max(10, radiusMeters) / 1000;
     if (!Number.isFinite(distanceKm) || distanceKm > maxDistanceKm) {
+      // Surface distance + radius in the error payload so the mobile app can
+      // render a precise, contextual message ("you are 350m away, the
+      // restaurant allows 100m") instead of a generic "too far" string.
+      const distanceMeters = Number.isFinite(distanceKm)
+        ? Math.round(distanceKm * 1000)
+        : null;
       throw new ApplicationError({
         code: 'checkin_out_of_range',
         message:
           'You are too far from this restaurant to check in. Make sure you are at the restaurant and scanning its QR code.',
         statusCode: 403,
+        details: {
+          distanceMeters,
+          allowedRadiusMeters: Math.max(10, radiusMeters),
+          restaurantName: restaurant.name || null,
+        },
       });
     }
   }
@@ -286,6 +297,10 @@ export class CheckInService {
         code: 'checkin_location_inaccurate',
         message: 'Your location accuracy is too low for check-in. Move closer and try again.',
         statusCode: 403,
+        details: {
+          accuracyMeters: accuracy,
+          maxAccuracyMeters: MAX_LOCATION_ACCURACY_METERS,
+        },
       });
     }
     if (locationCapturedAt) {
@@ -295,6 +310,10 @@ export class CheckInService {
           code: 'checkin_location_stale',
           message: 'Your location is too old for check-in. Refresh your location and try again.',
           statusCode: 403,
+          details: {
+            ageSeconds: Math.round(ageMs / 1000),
+            maxAgeSeconds: Math.round(MAX_LOCATION_AGE_MS / 1000),
+          },
         });
       }
     }

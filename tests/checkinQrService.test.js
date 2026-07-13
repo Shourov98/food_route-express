@@ -370,6 +370,105 @@ test('CheckInService rejects scans when the user is too far from the restaurant 
   );
 });
 
+test('CheckInService includes distance, radius and restaurant name in the checkin_out_of_range details payload', async () => {
+  const service = new CheckInService({
+    checkinRepository: new FakeCheckInRepository(),
+    restaurantRepository: new FakeRestaurantRepository([makeRestaurant({ checkinRadiusMeters: 100 })]),
+    userRepository: new FakeUserRepository([makeUser()]),
+    identityProvider: new FakeIdentityProvider(),
+    xpService: new XpService({
+      xpRepository: new FakeXpRepository(),
+      pointsRepository: new FakePointsRepository(),
+    }),
+  });
+
+  await assert.rejects(
+    service.scanQr({
+      accessToken: 'user-1',
+      qrToken: 'token-1234',
+      latitude: 23.705,
+      longitude: 90.405,
+    }),
+    (error) => {
+      if (error.code !== 'checkin_out_of_range') return false;
+      const details = error.details || {};
+      return (
+        typeof details.distanceMeters === 'number' &&
+        details.distanceMeters > 100 &&
+        details.allowedRadiusMeters === 100 &&
+        details.restaurantName === 'Cafe One'
+      );
+    },
+  );
+});
+
+test('CheckInService includes accuracy values in the checkin_location_inaccurate details payload', async () => {
+  const service = new CheckInService({
+    checkinRepository: new FakeCheckInRepository(),
+    restaurantRepository: new FakeRestaurantRepository([makeRestaurant()]),
+    userRepository: new FakeUserRepository([makeUser()]),
+    identityProvider: new FakeIdentityProvider(),
+    xpService: new XpService({
+      xpRepository: new FakeXpRepository(),
+      pointsRepository: new FakePointsRepository(),
+    }),
+  });
+
+  await assert.rejects(
+    service.scanQr({
+      accessToken: 'user-1',
+      qrToken: 'token-1234',
+      latitude: 23.7002,
+      longitude: 90.4002,
+      accuracy: 250,
+    }),
+    (error) => {
+      if (error.code !== 'checkin_location_inaccurate') return false;
+      const details = error.details || {};
+      return (
+        details.accuracyMeters === 250 &&
+        typeof details.maxAccuracyMeters === 'number'
+      );
+    },
+  );
+});
+
+test('CheckInService includes age values in the checkin_location_stale details payload', async () => {
+  const now = new Date('2026-05-24T12:00:00.000Z');
+  const service = new CheckInService({
+    checkinRepository: new FakeCheckInRepository(),
+    restaurantRepository: new FakeRestaurantRepository([makeRestaurant()]),
+    userRepository: new FakeUserRepository([makeUser()]),
+    identityProvider: new FakeIdentityProvider(),
+    xpService: new XpService({
+      xpRepository: new FakeXpRepository(),
+      pointsRepository: new FakePointsRepository(),
+    }),
+    nowProvider: () => now,
+  });
+
+  const staleTimestamp = new Date(now.getTime() - 10 * 60 * 1000);
+
+  await assert.rejects(
+    service.scanQr({
+      accessToken: 'user-1',
+      qrToken: 'token-1234',
+      latitude: 23.7002,
+      longitude: 90.4002,
+      locationCapturedAt: staleTimestamp,
+    }),
+    (error) => {
+      if (error.code !== 'checkin_location_stale') return false;
+      const details = error.details || {};
+      return (
+        typeof details.ageSeconds === 'number' &&
+        details.ageSeconds >= 600 &&
+        typeof details.maxAgeSeconds === 'number'
+      );
+    },
+  );
+});
+
 test('CheckInService honors a restaurant-configured check-in radius', async () => {
   const { service } = createService({
     restaurants: [makeRestaurant({ checkinRadiusMeters: 500 })],
