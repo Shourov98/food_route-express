@@ -8,18 +8,14 @@ import { buildPaginationMeta } from '../../shared/pagination.js';
 import { parseQrPayload } from '../../shared/utils/qrCode.js';
 import { buildCheckInRecordId } from './checkinRepository.js';
 
-const CHECKIN_MAX_DISTANCE_KM = 0.1;
+const DEFAULT_CHECKIN_RADIUS_METERS = 100;
+const MAX_DAILY_CHECKINS = 5;
+const CHECKIN_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const MAX_LOCATION_ACCURACY_METERS = 100;
+const MAX_LOCATION_AGE_MS = 5 * 60 * 1000;
 
 function sameUtcDate(left, right) {
   return left.toISOString().slice(0, 10) === right.toISOString().slice(0, 10);
-}
-
-function mealWindowForDate(date) {
-  const hour = date.getUTCHours();
-  if (hour >= 5 && hour < 11) return 'breakfast';
-  if (hour >= 11 && hour < 17) return 'lunch';
-  if (hour >= 17 && hour < 23) return 'dinner';
-  return null;
 }
 
 function checkinResponse(record) {
@@ -55,7 +51,7 @@ export class CheckInService {
     this.nowProvider = nowProvider;
   }
 
-  async scanQr({ accessToken, qrToken, latitude, longitude }) {
+  async scanQr({ accessToken, qrToken, latitude, longitude, accuracy = null, locationCapturedAt = null }) {
     let user = await getAuthenticatedAccount({
       accessToken,
       identityProvider: this.identityProvider,
@@ -88,22 +84,14 @@ export class CheckInService {
         statusCode: 403,
       });
     }
+    const now = this.nowProvider();
+    this.assertFreshAccurateLocation({ accuracy, locationCapturedAt, now });
     this.assertWithinCheckinRange({ restaurant, latitude, longitude });
 
-    const now = this.nowProvider();
-    const mealWindow = mealWindowForDate(now);
-    if (!mealWindow) {
-      throw new ApplicationError({
-        code: 'checkin_outside_meal_window',
-        message: 'Check-in is only available during breakfast, lunch, or dinner hours.',
-        statusCode: 403,
-      });
-    }
-    await this.assertMealWindowCheckinAllowed({
+    await this.assertCheckinAllowed({
       userId: user.uid,
       restaurantId: restaurant.id,
       date: now,
-      mealWindow,
     });
     const checkInId = buildCheckInRecordId();
     const xpRecord = await this.xpService.awardXp({
@@ -275,7 +263,14 @@ export class CheckInService {
       Number(qrLocation.latitude),
       Number(qrLocation.longitude),
     );
-    if (!Number.isFinite(distanceKm) || distanceKm > CHECKIN_MAX_DISTANCE_KM) {
+    const radiusMeters = Number(
+      restaurant.checkinRadiusMeters ??
+        restaurant.allowedRadiusMeters ??
+        restaurant.radiusMeters ??
+        DEFAULT_CHECKIN_RADIUS_METERS,
+    );
+    const maxDistanceKm = Math.max(10, radiusMeters) / 1000;
+    if (!Number.isFinite(distanceKm) || distanceKm > maxDistanceKm) {
       throw new ApplicationError({
         code: 'checkin_out_of_range',
         message:
@@ -285,17 +280,46 @@ export class CheckInService {
     }
   }
 
-  async assertMealWindowCheckinAllowed({ userId, restaurantId, date, mealWindow }) {
-    const existing = (await this.checkinRepository.listByUser(userId)).find(
+  assertFreshAccurateLocation({ accuracy, locationCapturedAt, now }) {
+    if (accuracy !== null && accuracy !== undefined && accuracy > MAX_LOCATION_ACCURACY_METERS) {
+      throw new ApplicationError({
+        code: 'checkin_location_inaccurate',
+        message: 'Your location accuracy is too low for check-in. Move closer and try again.',
+        statusCode: 403,
+      });
+    }
+    if (locationCapturedAt) {
+      const ageMs = Math.abs(now.getTime() - locationCapturedAt.getTime());
+      if (ageMs > MAX_LOCATION_AGE_MS) {
+        throw new ApplicationError({
+          code: 'checkin_location_stale',
+          message: 'Your location is too old for check-in. Refresh your location and try again.',
+          statusCode: 403,
+        });
+      }
+    }
+  }
+
+  async assertCheckinAllowed({ userId, restaurantId, date }) {
+    const records = await this.checkinRepository.listByUser(userId);
+    const recentSameRestaurant = records.find(
       (record) =>
         record.restaurantId === restaurantId &&
-        sameUtcDate(record.createdAt, date) &&
-        mealWindowForDate(record.createdAt) === mealWindow,
+        date.getTime() - record.createdAt.getTime() < CHECKIN_COOLDOWN_MS,
     );
-    if (existing) {
+    if (recentSameRestaurant) {
       throw new ApplicationError({
-        code: 'checkin_meal_window_limit_reached',
-        message: `You have already checked in for ${mealWindow} at this restaurant today.`,
+        code: 'checkin_cooldown_active',
+        message: 'You have already checked in at this restaurant in the last 24 hours.',
+        statusCode: 429,
+      });
+    }
+
+    const dailyCount = records.filter((record) => sameUtcDate(record.createdAt, date)).length;
+    if (dailyCount >= MAX_DAILY_CHECKINS) {
+      throw new ApplicationError({
+        code: 'daily_checkin_limit_reached',
+        message: 'You have reached the daily limit of 5 valid check-ins.',
         statusCode: 429,
       });
     }

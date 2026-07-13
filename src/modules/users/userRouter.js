@@ -24,6 +24,7 @@ export function createUserRouter(config) {
   router.post('/me/push-token', asyncHandler(controller.registerPushToken));
   router.get('/me/share/check-ins/:checkinId/preview', asyncHandler(controller.getCheckinSharePreview));
   router.get('/me/share/rewards/:redemptionId/preview', asyncHandler(controller.getRewardSharePreview));
+  router.get('/me/share/receipts/:receiptUploadId/preview', asyncHandler(controller.getReceiptSharePreview));
   router.post('/me/social-share-reward', asyncHandler(controller.claimSocialShareReward));
   router.get('/me/xp-history', asyncHandler(controller.getXpHistory));
   router.get('/me/streak', asyncHandler(controller.getStreak));

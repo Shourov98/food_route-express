@@ -4,6 +4,17 @@ import { ApplicationError, validationError } from '../../core/ApplicationError.j
 import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/authorization.js';
 import { buildPaginationMeta } from '../../shared/pagination.js';
 
+const ACTIVE_REDEMPTION_STATUSES = new Set(['pending', 'claimed', 'used', 'redeemed']);
+const MAX_DAILY_REDEMPTIONS = 3;
+
+function sameUtcDate(left, right) {
+  return left.toISOString().slice(0, 10) === right.toISOString().slice(0, 10);
+}
+
+function buildRedemptionCode() {
+  return crypto.randomBytes(5).toString('hex').toUpperCase();
+}
+
 function redemptionData(record) {
   return {
     id: record.id,
@@ -19,10 +30,12 @@ function redemptionData(record) {
     foodItemName: record.foodItemName,
     discountPercentage: record.discountPercentage,
     giftCardCode: record.giftCardCode,
+    redemptionCode: record.redemptionCode,
     termsAndConditions: record.termsAndConditions,
     status: record.status,
     redeemedAt: record.redeemedAt,
     usedAt: record.usedAt,
+    expiresAt: record.expiresAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
@@ -50,6 +63,7 @@ export class RewardRedemptionService {
     const reward = await this.getReward(rewardId);
     const now = new Date();
     this.validateReward(reward, now);
+    await this.assertRedemptionAllowed({ userId: user.uid, rewardId: reward.id, now });
 
     const currentPoints = await this.xpService.getTotalPoints(user.uid);
     if (currentPoints < reward.pointsRequired) {
@@ -75,10 +89,12 @@ export class RewardRedemptionService {
       foodItemName: reward.foodItemName,
       discountPercentage: reward.discountPercentage,
       giftCardCode: reward.giftCardCode,
+      redemptionCode: buildRedemptionCode(),
       termsAndConditions: reward.termsAndConditions,
-      status: 'claimed',
+      status: 'pending',
       redeemedAt: now,
       usedAt: null,
+      expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
       createdAt: now,
       updatedAt: now,
     });
@@ -142,13 +158,16 @@ export class RewardRedemptionService {
 
   normalizeStatusFilter(statusFilter) {
     const normalized = String(statusFilter).trim().toLowerCase();
-    if (normalized === 'available' || normalized === 'claimed') {
-      return 'claimed';
+    if (normalized === 'available' || normalized === 'claimed' || normalized === 'pending') {
+      return 'pending';
     }
-    if (normalized === 'redeemed') {
-      return 'redeemed';
+    if (normalized === 'redeemed' || normalized === 'used') {
+      return 'used';
     }
-    throw validationError('Status must be one of: available, claimed, redeemed.');
+    if (normalized === 'expired' || normalized === 'cancelled' || normalized === 'rejected') {
+      return normalized;
+    }
+    throw validationError('Status must be one of: available, pending, used, expired, cancelled, rejected.');
   }
 
   async redeemOwnedReward({ accessToken, redemptionId }) {
@@ -161,16 +180,23 @@ export class RewardRedemptionService {
         statusCode: 404,
       });
     }
-    if (record.status !== 'claimed') {
+    if (!new Set(['pending', 'claimed']).has(record.status)) {
       throw new ApplicationError({
         code: 'redemption_already_used',
-        message: 'This reward has already been redeemed.',
+        message: 'This reward is no longer available to use.',
+        statusCode: 400,
+      });
+    }
+    if (record.expiresAt && record.expiresAt <= new Date()) {
+      throw new ApplicationError({
+        code: 'redemption_expired',
+        message: 'This reward code has expired.',
         statusCode: 400,
       });
     }
     const updated = {
       ...record,
-      status: 'redeemed',
+      status: 'used',
       usedAt: new Date(),
       updatedAt: new Date(),
     };
@@ -204,6 +230,31 @@ export class RewardRedemptionService {
         code: 'reward_out_of_stock',
         message: 'This reward is out of stock.',
         statusCode: 400,
+      });
+    }
+  }
+
+  async assertRedemptionAllowed({ userId, rewardId, now }) {
+    if (typeof this.rewardRedemptionRepository.listByUser !== 'function') {
+      return;
+    }
+    const records = await this.rewardRedemptionRepository.listByUser(userId);
+    const duplicate = records.find(
+      (record) => record.rewardId === rewardId && ACTIVE_REDEMPTION_STATUSES.has(record.status),
+    );
+    if (duplicate) {
+      throw new ApplicationError({
+        code: 'reward_already_redeemed',
+        message: 'You have already redeemed this reward.',
+        statusCode: 409,
+      });
+    }
+    const todaysRedemptions = records.filter((record) => sameUtcDate(record.redeemedAt ?? record.createdAt, now));
+    if (todaysRedemptions.length >= MAX_DAILY_REDEMPTIONS) {
+      throw new ApplicationError({
+        code: 'daily_reward_redemption_limit_reached',
+        message: 'You have reached the daily limit of 3 reward redemptions.',
+        statusCode: 429,
       });
     }
   }

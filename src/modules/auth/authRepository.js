@@ -273,6 +273,18 @@ export class FirestoreLoginEventRepository {
       return 0;
     }
 
+    // Streak is only "active" if the most recent login was today or yesterday
+    // in UTC. Anything older means the chain is broken and the user must log
+    // in again to start a new streak. Without this guard the function would
+    // happily report a stale streak as if it were still alive.
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const todayMs = new Date(`${todayUtc}T00:00:00.000Z`).getTime();
+    const latestMs = new Date(`${uniqueDates[0]}T00:00:00.000Z`).getTime();
+    const daysSinceLatest = Math.round((todayMs - latestMs) / 86_400_000);
+    if (daysSinceLatest > 1) {
+      return 0;
+    }
+
     let streak = 1;
     let current = new Date(`${uniqueDates[0]}T00:00:00.000Z`);
     for (const dateString of uniqueDates.slice(1)) {

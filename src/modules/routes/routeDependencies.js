@@ -3,7 +3,7 @@ import { FirebaseIdentityProvider } from '../../infra/identityProvider.js';
 import { FirestoreUserRepository } from '../auth/authRepository.js';
 import { FirestoreCheckInRepository } from '../checkins/checkinRepository.js';
 import { FirestoreRestaurantRepository } from '../restaurants/restaurantRepository.js';
-import { FirestoreRouteRepository } from './routeRepository.js';
+import { FirestoreRouteProgressRepository, FirestoreRouteRepository } from './routeRepository.js';
 import { RouteService } from './routeService.js';
 
 let cachedServicePromise;
@@ -13,6 +13,7 @@ export function getRouteService(config) {
     cachedServicePromise = getFirebaseClients(config).then(({ auth, firestore }) => {
       return new RouteService({
         routeRepository: new FirestoreRouteRepository(firestore),
+        routeProgressRepository: new FirestoreRouteProgressRepository(firestore),
         checkinRepository: new FirestoreCheckInRepository(firestore),
         restaurantRepository: new FirestoreRestaurantRepository(firestore),
         userRepository: new FirestoreUserRepository(firestore),

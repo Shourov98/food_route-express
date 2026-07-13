@@ -79,3 +79,57 @@ export class FirestoreRouteRepository {
     return true;
   }
 }
+
+function progressFromData(data = {}, fallbackId = 'unknown-route-progress') {
+  return {
+    id: data.id ?? fallbackId,
+    routeId: data.routeId,
+    userId: data.userId,
+    status: data.status ?? 'in_progress',
+    visitedRestaurantIds: Array.isArray(data.visitedRestaurantIds)
+      ? [...data.visitedRestaurantIds]
+      : [],
+    receiptUploadIds: Array.isArray(data.receiptUploadIds) ? [...data.receiptUploadIds] : [],
+    completedAt: toDate(data.completedAt),
+    lastReceiptUploadedAt: toDate(data.lastReceiptUploadedAt),
+    createdAt: toDate(data.createdAt) ?? new Date(),
+    updatedAt: toDate(data.updatedAt) ?? toDate(data.createdAt) ?? new Date(),
+  };
+}
+
+export class FirestoreRouteProgressRepository {
+  constructor(firestore) {
+    this.collection = firestore.collection('route_progress');
+  }
+
+  async create(record) {
+    await this.collection.doc(record.id).set(record);
+    return record;
+  }
+
+  async update(progressId, record) {
+    const ref = this.collection.doc(progressId);
+    const snapshot = await ref.get();
+    if (!snapshot.exists) {
+      return null;
+    }
+    await ref.set(record);
+    return record;
+  }
+
+  async listByUser(userId) {
+    const snapshot = await this.collection.where('userId', '==', userId).get();
+    return snapshot.docs
+      .map((doc) => progressFromData(doc.data(), doc.id))
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
+  async listByUserAndRoute({ userId, routeId }) {
+    const records = await this.listByUser(userId);
+    return records.filter((record) => record.routeId === routeId);
+  }
+
+  async getLatestByUserAndRoute({ userId, routeId }) {
+    return (await this.listByUserAndRoute({ userId, routeId }))[0] ?? null;
+  }
+}

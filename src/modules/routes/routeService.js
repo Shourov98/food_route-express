@@ -108,12 +108,14 @@ function analyticsWindow(range, now = new Date()) {
 export class RouteService {
   constructor({
     routeRepository,
+    routeProgressRepository = null,
     checkinRepository = null,
     restaurantRepository,
     userRepository,
     identityProvider,
   }) {
     this.routeRepository = routeRepository;
+    this.routeProgressRepository = routeProgressRepository;
     this.checkinRepository = checkinRepository;
     this.restaurantRepository = restaurantRepository;
     this.userRepository = userRepository;
@@ -212,7 +214,9 @@ export class RouteService {
     const start = (page - 1) * pageSize;
     return {
       items: await Promise.all(
-        records.slice(start, start + pageSize).map((record) => this.toResponse(record)),
+        records.slice(start, start + pageSize).map((record) =>
+          this.toResponse(record, { userId: user.uid }),
+        ),
       ),
       pagination: buildPaginationMeta({ page, pageSize, totalItems }),
     };
@@ -222,7 +226,7 @@ export class RouteService {
     await this.getCurrentAdmin(accessToken);
     const record = await this.getRouteOrError(routeId);
     const restaurants = await this.getRestaurantsByIds(record.restaurantIds);
-    return this.toResponse(record, { restaurants });
+    return this.toResponse(record, { restaurants, userId: user.uid });
   }
 
   async getRouteAnalytics({ accessToken, range }) {
@@ -388,8 +392,9 @@ export class RouteService {
     return restaurants;
   }
 
-  async toResponse(record, { restaurants = null } = {}) {
+  async toResponse(record, { restaurants = null, userId = null } = {}) {
     const restaurantRecords = restaurants ?? (await this.getRestaurantsByIds(record.restaurantIds));
+    const progress = userId ? await this.routeProgressForUser({ userId, route: record }) : null;
     return {
       id: record.id,
       routeName: record.routeName,
@@ -413,6 +418,39 @@ export class RouteService {
       createdBy: record.createdBy,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      userProgress: progress,
+    };
+  }
+
+  async routeProgressForUser({ userId, route }) {
+    if (!this.routeProgressRepository) {
+      return null;
+    }
+    const records = await this.routeProgressRepository.listByUserAndRoute({
+      userId,
+      routeId: route.id,
+    });
+    const latest = records[0] ?? null;
+    const requiredVisits = route.requiredVisits || route.restaurantIds.length;
+    if (!latest) {
+      return {
+        status: 'not_started',
+        visitedRestaurantIds: [],
+        completedAt: null,
+        requiredVisits,
+        progressPercent: 0,
+      };
+    }
+    const visitedCount = new Set(latest.visitedRestaurantIds).size;
+    return {
+      id: latest.id,
+      status: latest.status,
+      visitedRestaurantIds: latest.visitedRestaurantIds,
+      receiptUploadIds: latest.receiptUploadIds,
+      completedAt: latest.completedAt,
+      requiredVisits,
+      progressPercent: Math.min(100, Math.round((visitedCount / Math.max(1, requiredVisits)) * 100)),
+      lastReceiptUploadedAt: latest.lastReceiptUploadedAt,
     };
   }
 

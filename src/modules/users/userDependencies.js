@@ -6,6 +6,7 @@ import { FirestoreLoginEventRepository, FirestoreUserRepository } from '../auth/
 import { FirestoreCheckInRepository } from '../checkins/checkinRepository.js';
 import { LeaderboardService } from '../leaderboard/leaderboardService.js';
 import { FirestoreRewardRedemptionRepository } from '../rewardRedemptions/rewardRedemptionRepository.js';
+import { FirestoreReceiptUploadRepository } from '../receiptUploads/receiptUploadRepository.js';
 import { FirestoreRestaurantRepository } from '../restaurants/restaurantRepository.js';
 import {
   FirestoreProximityAlertLogRepository,
@@ -41,6 +42,7 @@ export function getUserService(config) {
         xpService,
         checkinRepository: new FirestoreCheckInRepository(firestore),
         rewardRedemptionRepository: new FirestoreRewardRedemptionRepository(firestore),
+        receiptUploadRepository: new FirestoreReceiptUploadRepository(firestore),
         restaurantRepository: new FirestoreRestaurantRepository(firestore),
         proximityAlertRepository: new FirestoreProximityAlertRepository(firestore),
         proximityAlertLogRepository: new FirestoreProximityAlertLogRepository(firestore),

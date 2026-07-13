@@ -23,8 +23,8 @@ export function createUserController({ getUserService, config }) {
       if (!new Set(['local', 'national']).has(scope)) {
         throw validationError("Query param 'scope' must be 'local' or 'national'.");
       }
-      if (!new Set(['weekly', 'monthly']).has(period)) {
-        throw validationError("Query param 'period' must be 'weekly' or 'monthly'.");
+      if (!new Set(['weekly', 'monthly', 'all_time']).has(period)) {
+        throw validationError("Query param 'period' must be 'weekly', 'monthly', or 'all_time'.");
       }
       res.json(successResponse(await (await service()).getLeaderboard({
         accessToken: requireBearerToken(req),
@@ -106,6 +106,12 @@ export function createUserController({ getUserService, config }) {
       res.json(successResponse(await (await service()).getRewardSharePreview({
         accessToken: requireBearerToken(req),
         redemptionId: req.params.redemptionId,
+      })));
+    },
+    async getReceiptSharePreview(req, res) {
+      res.json(successResponse(await (await service()).getReceiptSharePreview({
+        accessToken: requireBearerToken(req),
+        receiptUploadId: req.params.receiptUploadId,
       })));
     },
     async getXpHistory(req, res) {

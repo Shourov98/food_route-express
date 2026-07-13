@@ -4,6 +4,7 @@ import { FirebaseImageStorage } from '../../shared/services/imageStorage.js';
 import { FirestoreUserRepository } from '../auth/authRepository.js';
 import { FirestoreCheckInRepository } from '../checkins/checkinRepository.js';
 import { FirestoreRestaurantRepository } from '../restaurants/restaurantRepository.js';
+import { FirestoreRouteProgressRepository, FirestoreRouteRepository } from '../routes/routeRepository.js';
 import { FirestorePointsLedgerRepository, FirestoreXpLedgerRepository } from '../xp/xpRepository.js';
 import { XpService } from '../xp/xpService.js';
 import { FirestoreReceiptUploadRepository } from './receiptUploadRepository.js';
@@ -19,6 +20,8 @@ export function getReceiptUploadService(config) {
         receiptUploadRepository: new FirestoreReceiptUploadRepository(firestore),
         checkinRepository: new FirestoreCheckInRepository(firestore),
         restaurantRepository: new FirestoreRestaurantRepository(firestore),
+        routeRepository: new FirestoreRouteRepository(firestore),
+        routeProgressRepository: new FirestoreRouteProgressRepository(firestore),
         userRepository: new FirestoreUserRepository(firestore),
         identityProvider: new FirebaseIdentityProvider({ auth, config }),
         imageStorage: new FirebaseImageStorage({

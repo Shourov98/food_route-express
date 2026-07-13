@@ -40,6 +40,48 @@ class FakeRestaurantRepository {
   }
 }
 
+class FakeRouteRepository {
+  constructor(records = []) {
+    this.records = records;
+  }
+
+  async listAll() {
+    return [...this.records];
+  }
+}
+
+class FakeRouteProgressRepository {
+  constructor(records = []) {
+    this.records = records;
+  }
+
+  async create(record) {
+    this.records.push(record);
+    return record;
+  }
+
+  async update(progressId, record) {
+    const index = this.records.findIndex((item) => item.id === progressId);
+    if (index === -1) return null;
+    this.records[index] = record;
+    return record;
+  }
+
+  async listByUser(userId) {
+    return this.records
+      .filter((record) => record.userId === userId)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
+  async listByUserAndRoute({ userId, routeId }) {
+    return (await this.listByUser(userId)).filter((record) => record.routeId === routeId);
+  }
+
+  async getLatestByUserAndRoute({ userId, routeId }) {
+    return (await this.listByUserAndRoute({ userId, routeId }))[0] ?? null;
+  }
+}
+
 class FakeReceiptUploadRepository {
   constructor(records = []) {
     this.records = new Map(records.map((record) => [record.id, record]));
@@ -153,6 +195,8 @@ function createService({
   uploads = [],
   checkins = [makeCheckin()],
   restaurants = [makeRestaurant()],
+  routes = [],
+  routeProgress = [],
 } = {}) {
   const xpRepository = new FakeLedgerRepository();
   const pointsRepository = new FakeLedgerRepository();
@@ -163,6 +207,8 @@ function createService({
       receiptUploadRepository: new FakeReceiptUploadRepository(uploads),
       checkinRepository: new FakeCheckInRepository(checkins),
       restaurantRepository: new FakeRestaurantRepository(restaurants),
+      routeRepository: new FakeRouteRepository(routes),
+      routeProgressRepository: new FakeRouteProgressRepository(routeProgress),
       userRepository: new FakeUserRepository([makeUser()]),
       identityProvider: new FakeIdentityProvider(),
       imageStorage: new FakeImageStorage(),
@@ -250,4 +296,100 @@ test('ReceiptUploadService uses the latest unclaimed check-in for the restaurant
 
   assert.equal(result.data.checkinId, 'checkin-1');
   assert.equal(pointsRepository.records[0].sourceId, 'checkin-1');
+});
+
+test('ReceiptUploadService updates route progress and awards completion bonus', async () => {
+  const routeProgress = [
+    {
+      id: 'progress-1',
+      routeId: 'route-1',
+      userId: 'user-1',
+      status: 'in_progress',
+      visitedRestaurantIds: ['restaurant-2'],
+      receiptUploadIds: ['upload-previous'],
+      completedAt: null,
+      lastReceiptUploadedAt: new Date('2026-06-16T07:00:00.000Z'),
+      createdAt: new Date('2026-06-16T07:00:00.000Z'),
+      updatedAt: new Date('2026-06-16T07:00:00.000Z'),
+    },
+  ];
+  const { service, xpRepository, pointsRepository } = createService({
+    routes: [
+      {
+        id: 'route-1',
+        routeName: 'Lunch Route',
+        city: 'Dhaka',
+        restaurantIds: ['restaurant-2', 'restaurant-1'],
+        status: 'active',
+        requiredVisits: 2,
+        mandatoryOrder: false,
+        pointsPerReceiptUpload: 10,
+        completionBonus: 100,
+        repeatable: false,
+        cooldownMinutes: 60,
+        createdAt: new Date('2026-06-16T00:00:00.000Z'),
+        updatedAt: new Date('2026-06-16T00:00:00.000Z'),
+      },
+    ],
+    routeProgress,
+  });
+
+  const result = await service.uploadReceipt({
+    accessToken: 'user-1',
+    restaurantId: 'restaurant-1',
+    image: { originalname: 'receipt.png', mimetype: 'image/png', buffer: Buffer.from('x') },
+  });
+
+  assert.equal(result.data.routeProgress.length, 1);
+  assert.equal(result.data.routeProgress[0].status, 'completed');
+  assert.equal(routeProgress[0].status, 'completed');
+  assert.deepEqual(routeProgress[0].visitedRestaurantIds, ['restaurant-2', 'restaurant-1']);
+  assert.ok(xpRepository.records.some((record) => record.sourceType === 'route_receipt_upload'));
+  assert.ok(xpRepository.records.some((record) => record.sourceType === 'route_completion'));
+  assert.ok(pointsRepository.records.some((record) => record.sourceType === 'route_completion'));
+});
+
+test('ReceiptUploadService rejects route receipt uploads during route cooldown', async () => {
+  const { service } = createService({
+    routes: [
+      {
+        id: 'route-1',
+        routeName: 'Lunch Route',
+        city: 'Dhaka',
+        restaurantIds: ['restaurant-1', 'restaurant-2'],
+        status: 'active',
+        requiredVisits: 2,
+        mandatoryOrder: false,
+        pointsPerReceiptUpload: 10,
+        completionBonus: 100,
+        repeatable: false,
+        cooldownMinutes: 60,
+        createdAt: new Date('2026-06-16T00:00:00.000Z'),
+        updatedAt: new Date('2026-06-16T00:00:00.000Z'),
+      },
+    ],
+    routeProgress: [
+      {
+        id: 'progress-1',
+        routeId: 'route-1',
+        userId: 'user-1',
+        status: 'in_progress',
+        visitedRestaurantIds: ['restaurant-2'],
+        receiptUploadIds: ['upload-previous'],
+        completedAt: null,
+        lastReceiptUploadedAt: new Date('2026-06-16T08:30:00.000Z'),
+        createdAt: new Date('2026-06-16T08:30:00.000Z'),
+        updatedAt: new Date('2026-06-16T08:30:00.000Z'),
+      },
+    ],
+  });
+
+  await assert.rejects(
+    service.uploadReceipt({
+      accessToken: 'user-1',
+      restaurantId: 'restaurant-1',
+      image: { originalname: 'receipt.png', mimetype: 'image/png', buffer: Buffer.from('x') },
+    }),
+    (error) => error.code === 'route_receipt_cooldown_active',
+  );
 });

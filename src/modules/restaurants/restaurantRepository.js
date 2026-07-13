@@ -49,6 +49,7 @@ function restaurantFromData(data = {}, fallbackId = 'unknown-restaurant') {
       token: String(qrCode.token ?? data.id ?? 'unknown-token'),
     },
     pointsPerCheckIn: Number(data.pointsPerCheckIn ?? 0),
+    checkinRadiusMeters: Number(data.checkinRadiusMeters ?? data.allowedRadiusMeters ?? 100),
     receiptUploadEnabled: Boolean(data.receiptUploadEnabled),
     pointsPerReceiptUpload: Number(data.pointsPerReceiptUpload ?? 0),
     enabledPackages: Array.isArray(data.enabledPackages)

@@ -109,6 +109,9 @@ export function validateRestaurantCreate(body, file) {
   assertObject(body);
   requireImage(file);
   const pointsPerCheckIn = requiredInteger(body, 'pointsPerCheckIn', { min: 0, max: 10_000 });
+  const checkinRadiusMeters = hasOwn(body, 'checkinRadiusMeters')
+    ? requiredInteger(body, 'checkinRadiusMeters', { min: 10, max: 5_000 })
+    : 100;
   return {
     name: requiredString(body, 'name', { min: 2, max: 120 }),
     address: requiredString(body, 'address', { min: 5, max: 255 }),
@@ -121,6 +124,7 @@ export function validateRestaurantCreate(body, file) {
     imageUrl: null,
     qrCode: parseQrCode(body),
     pointsPerCheckIn,
+    checkinRadiusMeters,
     receiptUploadEnabled: true,
     pointsPerReceiptUpload: hasOwn(body, 'pointsPerReceiptUpload')
       ? requiredInteger(body, 'pointsPerReceiptUpload', { min: 0, max: 10_000 })
@@ -142,6 +146,9 @@ export function validateRestaurantUpdate(body) {
     imageUrl: optionalString(body, 'imageUrl') ?? null,
     qrCode: parseQrCode(body),
     pointsPerCheckIn: requiredInteger(body, 'pointsPerCheckIn', { min: 0, max: 10_000 }),
+    checkinRadiusMeters: hasOwn(body, 'checkinRadiusMeters')
+      ? requiredInteger(body, 'checkinRadiusMeters', { min: 10, max: 5_000 })
+      : 100,
     pointsPerReceiptUpload: hasOwn(body, 'pointsPerReceiptUpload')
       ? requiredInteger(body, 'pointsPerReceiptUpload', { min: 0, max: 10_000 })
       : undefined,

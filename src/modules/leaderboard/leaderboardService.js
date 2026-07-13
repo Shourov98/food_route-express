@@ -80,25 +80,46 @@ export class LeaderboardService {
     const rows = await Promise.all(
       users.map(async (user) => {
         const records = await this.xpRepository.listByUser(user.uid);
-        const currentXp = records
+        const activityRecords = records
           .filter((record) => record.sourceType !== 'admin_adjustment')
-          .filter((record) => !since || record.createdAt >= since)
+          .filter((record) => !since || record.createdAt >= since);
+        const currentXp = activityRecords
           .reduce((total, record) => total + record.xpDelta, 0);
         const pointsRecords = await this.pointsRepository.listByUser(user.uid);
         const currentPoints = pointsRecords.reduce((total, record) => total + record.pointsDelta, 0);
-        return { user, currentXp, currentPoints };
+        const validCheckins = activityRecords.filter((record) => record.sourceType === 'check_in').length;
+        const firstScoreAt = activityRecords.reduce(
+          (earliest, record) => (!earliest || record.createdAt < earliest ? record.createdAt : earliest),
+          null,
+        );
+        const latestActivityAt = activityRecords.reduce(
+          (latest, record) => (!latest || record.createdAt > latest ? record.createdAt : latest),
+          null,
+        );
+        return { user, currentXp, currentPoints, validCheckins, firstScoreAt, latestActivityAt };
       }),
     );
 
-    rows.sort((left, right) => {
+    const activeRows = since ? rows.filter((row) => row.currentXp > 0) : rows;
+    activeRows.sort((left, right) => {
       if (right.currentXp !== left.currentXp) return right.currentXp - left.currentXp;
+      if (right.validCheckins !== left.validCheckins) return right.validCheckins - left.validCheckins;
+      if (left.firstScoreAt && right.firstScoreAt && left.firstScoreAt.getTime() !== right.firstScoreAt.getTime()) {
+        return left.firstScoreAt.getTime() - right.firstScoreAt.getTime();
+      }
+      if (left.latestActivityAt && right.latestActivityAt && left.latestActivityAt.getTime() !== right.latestActivityAt.getTime()) {
+        return right.latestActivityAt.getTime() - left.latestActivityAt.getTime();
+      }
       return left.user.fullname.localeCompare(right.user.fullname) || left.user.uid.localeCompare(right.user.uid);
     });
 
-    return rows;
+    return activeRows;
   }
 
   periodStart(period) {
+    if (period === 'all_time') {
+      return null;
+    }
     const now = new Date();
     if (period === 'monthly') {
       return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));

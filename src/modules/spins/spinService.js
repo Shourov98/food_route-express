@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 
 import { ApplicationError } from '../../core/ApplicationError.js';
 import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/authorization.js';
@@ -6,6 +6,10 @@ import { buildPaginationMeta } from '../../shared/pagination.js';
 
 function isoDay(date) {
   return date.toISOString().slice(0, 10);
+}
+
+function cryptoRandomNumber() {
+  return randomInt(0, 1_000_000_000) / 1_000_000_000;
 }
 
 function rewardItem(record) {
@@ -55,7 +59,7 @@ export class SpinService {
     userRepository,
     identityProvider,
     xpService,
-    randomNumber = Math.random,
+    randomNumber = cryptoRandomNumber,
   }) {
     this.dailyRewardRepository = dailyRewardRepository;
     this.spinRepository = spinRepository;
@@ -79,11 +83,13 @@ export class SpinService {
     const user = await this.getCurrentUser(accessToken);
     const now = new Date();
     await this.refreshDailyRewards(now);
+    const settings = await this.getSettings();
+    const currentBoundary = this.spinEligibilityBoundary(now, settings);
     const latest = await this.spinRepository.getLatestByUser(user.uid);
-    if (latest && isoDay(latest.spunAt) === isoDay(now)) {
+    if (latest && latest.spunAt >= currentBoundary) {
       throw new ApplicationError({
         code: 'spin_already_used',
-        message: "You have already used today's spin.",
+        message: 'You have already used your spin for the current eligibility window.',
         statusCode: 400,
       });
     }
@@ -122,6 +128,14 @@ export class SpinService {
     });
 
     if (!isSynthetic && chosen.pointsReward > 0) {
+      await this.xpService.awardXp({
+        userId: user.uid,
+        delta: chosen.pointsReward,
+        sourceType: 'daily_reward_spin',
+        sourceId: created.id,
+        city: user.city ?? '',
+        country: user.country ?? '',
+      });
       await this.xpService.awardPoints({
         userId: user.uid,
         delta: chosen.pointsReward,
@@ -135,7 +149,7 @@ export class SpinService {
     return {
       spin: historyItem(created),
       remainingQuantityAvailable: isSynthetic ? 0 : chosen.quantityAvailable,
-      nextSpinAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)),
+      nextSpinAt: this.nextSpinAt(currentBoundary, settings),
       isInfiniteStock: isSynthetic,
     };
   }
@@ -297,6 +311,25 @@ export class SpinService {
       boundary.setUTCDate(boundary.getUTCDate() - 1);
     }
     return boundary;
+  }
+
+  spinEligibilityBoundary(now, settings) {
+    if (settings.resetLogic === 'daily') {
+      return this.resetBoundary(now, settings.resetTimeUtc);
+    }
+    const boundary = new Date(now);
+    boundary.setUTCHours(0, 0, 0, 0);
+    return boundary;
+  }
+
+  nextSpinAt(currentBoundary, settings) {
+    const next = new Date(currentBoundary);
+    if (settings.resetLogic === 'daily') {
+      next.setUTCDate(next.getUTCDate() + 1);
+      return next;
+    }
+    next.setUTCDate(next.getUTCDate() + 1);
+    return next;
   }
 
   validateResetTime(resetTimeUtc) {

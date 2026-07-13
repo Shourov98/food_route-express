@@ -22,9 +22,28 @@ export function validateCheckInScan(body) {
   if (body.longitude < -180 || body.longitude > 180) {
     throw validationError("Field 'longitude' is out of range.");
   }
+  let accuracy = null;
+  if (body.accuracy !== undefined && body.accuracy !== null) {
+    if (typeof body.accuracy !== 'number' || Number.isNaN(body.accuracy)) {
+      throw validationError("Field 'accuracy' should be a number.");
+    }
+    if (body.accuracy < 0 || body.accuracy > 10_000) {
+      throw validationError("Field 'accuracy' is out of range.");
+    }
+    accuracy = body.accuracy;
+  }
+  let locationCapturedAt = null;
+  if (body.locationCapturedAt !== undefined && body.locationCapturedAt !== null) {
+    locationCapturedAt = new Date(body.locationCapturedAt);
+    if (Number.isNaN(locationCapturedAt.getTime())) {
+      throw validationError("Field 'locationCapturedAt' should be a valid date.");
+    }
+  }
   return {
     qrToken: body.qrToken,
     latitude: body.latitude,
     longitude: body.longitude,
+    accuracy,
+    locationCapturedAt,
   };
 }

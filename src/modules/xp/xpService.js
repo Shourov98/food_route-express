@@ -113,13 +113,19 @@ export class XpService {
 
     let runningBalance = 0;
     const withBalance = records.map((record) => {
-      runningBalance += record.pointsDelta;
+      const hasStoredBalance = Number.isFinite(record.balanceAfter) && record.balanceAfter !== 0;
+      const balanceBefore = hasStoredBalance ? record.balanceBefore : runningBalance;
+      runningBalance = hasStoredBalance ? record.balanceAfter : runningBalance + record.pointsDelta;
       return {
         id: record.id,
         sourceType: record.sourceType,
         sourceId: record.sourceId,
         pointsDelta: record.pointsDelta,
+        eventId: record.eventId ?? record.sourceId,
+        balanceType: record.balanceType ?? 'wallet',
+        balanceBefore,
         balanceAfter: runningBalance,
+        status: record.status ?? 'committed',
         createdAt: record.createdAt,
       };
     });
@@ -156,6 +162,11 @@ export class XpService {
       sourceType,
       sourceId,
       xpDelta: appliedDelta,
+      eventId: sourceId,
+      balanceType: 'ranking',
+      balanceBefore: currentXp,
+      balanceAfter: currentXp + appliedDelta,
+      status: 'committed',
       city,
       country,
       createdAt: new Date(),
@@ -169,12 +180,18 @@ export class XpService {
     if (await this.pointsRepository.getBySource({ sourceType, sourceId, userId })) {
       return null;
     }
+    const currentPoints = await this.getTotalPoints(userId);
     return this.pointsRepository.create({
       id: crypto.randomUUID(),
       userId,
       sourceType,
       sourceId,
       pointsDelta: delta,
+      eventId: sourceId,
+      balanceType: 'wallet',
+      balanceBefore: currentPoints,
+      balanceAfter: currentPoints + delta,
+      status: 'committed',
       city,
       country,
       createdAt: new Date(),
@@ -196,6 +213,11 @@ export class XpService {
       sourceType: ADMIN_ADJUSTMENT,
       sourceId,
       pointsDelta: appliedDelta,
+      eventId: sourceId,
+      balanceType: 'wallet',
+      balanceBefore: currentPoints,
+      balanceAfter: currentPoints + appliedDelta,
+      status: 'committed',
       city,
       country,
       createdAt: new Date(),

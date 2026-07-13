@@ -98,6 +98,22 @@ class FakeRewardRedemptionRepository {
   }
 }
 
+class FakeReceiptUploadRepository {
+  constructor(records = []) {
+    this.records = records;
+  }
+
+  async getById(receiptUploadId) {
+    return this.records.find((record) => record.id === receiptUploadId) ?? null;
+  }
+
+  async listByUser(userId) {
+    return this.records
+      .filter((record) => record.userId === userId)
+      .sort((left, right) => new Date(right.createdAt ?? 0) - new Date(left.createdAt ?? 0));
+  }
+}
+
 class FakeRestaurantRepository {
   constructor(records = []) {
     this.records = new Map(records.map((record) => [record.id, record]));
@@ -115,6 +131,22 @@ class FakeXpRepository {
 
   async listByUser(userId) {
     return this.records.filter((record) => record.userId === userId);
+  }
+
+  async getBySource({ userId, sourceType, sourceId }) {
+    return (
+      this.records.find(
+        (record) =>
+          record.userId === userId &&
+          record.sourceType === sourceType &&
+          record.sourceId === sourceId,
+      ) ?? null
+    );
+  }
+
+  async create(record) {
+    this.records.push(record);
+    return record;
   }
 }
 
@@ -181,6 +213,7 @@ function createService({
   pointRecords = [],
   checkinRecords = null,
   rewardRedemptionRecords = [],
+  receiptUploadRecords = [],
   restaurantRecords = [
     { id: 'restaurant-1', name: 'Cafe One', imageUrl: 'https://cdn.example.com/cafe-one.png' },
   ],
@@ -220,6 +253,7 @@ function createService({
       ],
     ),
     rewardRedemptionRepository: new FakeRewardRedemptionRepository(rewardRedemptionRecords),
+    receiptUploadRepository: new FakeReceiptUploadRepository(receiptUploadRecords),
     restaurantRepository: new FakeRestaurantRepository(restaurantRecords),
     imageStorage: new FakeImageStorage(),
     leaderboardService,
@@ -295,8 +329,10 @@ test('UserService uploads profile image', async () => {
 });
 
 test('UserService claimSocialShareReward awards 50 points once for check-in shares', async () => {
+  const xpRecords = [];
   const service = createService({
     checkinRecords: [{ id: 'check-1', userId: 'user-1' }],
+    xpRecords,
   });
 
   const first = await service.claimSocialShareReward({
@@ -316,11 +352,15 @@ test('UserService claimSocialShareReward awards 50 points once for check-in shar
   assert.equal(duplicate.awarded, false);
   assert.equal(duplicate.pointsDelta, 0);
   assert.equal(duplicate.currentPoints, 50);
+  assert.equal(xpRecords.length, 1);
+  assert.equal(xpRecords[0].sourceType, 'social_share');
 });
 
 test('UserService claimSocialShareReward awards 100 points for reward shares', async () => {
+  const xpRecords = [];
   const service = createService({
     rewardRedemptionRecords: [{ id: 'redemption-1', userId: 'user-1' }],
+    xpRecords,
   });
 
   const result = await service.claimSocialShareReward({
@@ -333,6 +373,34 @@ test('UserService claimSocialShareReward awards 100 points for reward shares', a
   assert.equal(result.entityId, 'redemption-1');
   assert.equal(result.pointsDelta, 100);
   assert.equal(result.currentPoints, 100);
+  assert.equal(xpRecords[0].xpDelta, 100);
+});
+
+test('UserService claimSocialShareReward awards 50 points for receipt shares', async () => {
+  const service = createService({
+    receiptUploadRecords: [
+      {
+        id: 'receipt-1',
+        userId: 'user-1',
+        restaurantId: 'restaurant-1',
+        restaurantName: 'Cafe One',
+        receiptImageUrl: 'https://cdn.example.com/receipt.png',
+        awardedPoints: 40,
+        createdAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+  });
+
+  const result = await service.claimSocialShareReward({
+    accessToken: 'token',
+    payload: { shareType: 'receipt', entityId: 'receipt-1', platform: 'instagram' },
+  });
+
+  assert.equal(result.awarded, true);
+  assert.equal(result.shareType, 'receipt');
+  assert.equal(result.entityId, 'receipt-1');
+  assert.equal(result.pointsDelta, 50);
+  assert.equal(result.currentPoints, 50);
 });
 
 test('UserService claimSocialShareReward rejects sharing another user check-in', async () => {
@@ -445,4 +513,31 @@ test('UserService getRewardSharePreview returns share-ready content for an owned
   assert.equal(result.pointsReward, 100);
   assert.equal(result.imageUrl, 'https://cdn.example.com/reward.png');
   assert.match(result.text, /Free Burger/);
+});
+
+test('UserService getReceiptSharePreview returns share-ready content for an owned receipt upload', async () => {
+  const service = createService({
+    receiptUploadRecords: [
+      {
+        id: 'receipt-1',
+        userId: 'user-1',
+        restaurantId: 'restaurant-1',
+        restaurantName: 'Cafe One',
+        receiptImageUrl: 'https://cdn.example.com/receipt.png',
+        awardedPoints: 40,
+        createdAt: new Date('2026-06-16T10:00:00.000Z'),
+      },
+    ],
+  });
+
+  const result = await service.getReceiptSharePreview({
+    accessToken: 'token',
+    receiptUploadId: 'receipt-1',
+  });
+
+  assert.equal(result.shareType, 'receipt');
+  assert.equal(result.entityId, 'receipt-1');
+  assert.equal(result.restaurantName, 'Cafe One');
+  assert.equal(result.pointsReward, 50);
+  assert.equal(result.imageUrl, 'https://cdn.example.com/receipt.png');
 });

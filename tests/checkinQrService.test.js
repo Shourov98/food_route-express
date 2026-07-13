@@ -202,8 +202,8 @@ test('CheckInService scans QR and awards XP/points', async () => {
   assert.equal(result.message, 'Check-in completed successfully.');
 });
 
-test('CheckInService rejects a duplicate same-day check-in in the same meal window at the same restaurant', async () => {
-  const now = new Date('2026-05-24T06:00:00.000Z');
+test('CheckInService rejects a duplicate same-restaurant check-in within 24 hours', async () => {
+  const now = new Date('2026-05-24T12:00:00.000Z');
   const existingCheckin = {
     id: 'check-1',
     userId: 'user-1',
@@ -229,13 +229,13 @@ test('CheckInService rejects a duplicate same-day check-in in the same meal wind
       latitude: 23.7002,
       longitude: 90.4002,
     }),
-    (error) => error.code === 'checkin_meal_window_limit_reached',
+    (error) => error.code === 'checkin_cooldown_active',
   );
   assert.equal(xpRepository.records.length, 0);
   assert.equal(pointsRepository.records.length, 0);
 });
 
-test('CheckInService allows a same-day check-in at the same restaurant in a different meal window', async () => {
+test('CheckInService allows another same-restaurant check-in after 24 hours', async () => {
   const existingCheckin = {
     id: 'check-1',
     userId: 'user-1',
@@ -262,7 +262,7 @@ test('CheckInService allows a same-day check-in at the same restaurant in a diff
       xpRepository,
       pointsRepository,
     }),
-    nowProvider: () => new Date('2026-05-24T12:00:00.000Z'),
+    nowProvider: () => new Date('2026-05-25T05:31:00.000Z'),
   });
 
   const result = await service.scanQr({
@@ -314,8 +314,22 @@ test('CheckInService allows same-day check-ins across different restaurants in t
   assert.equal(pointsRepository.records.length, 2);
 });
 
-test('CheckInService rejects scans outside breakfast, lunch, and dinner windows', async () => {
+test('CheckInService rejects the sixth valid check-in in the same UTC day', async () => {
+  const checkins = Array.from({ length: 5 }, (_, index) => ({
+    id: `check-${index + 1}`,
+    userId: 'user-1',
+    userFullname: 'Jane Doe',
+    userEmail: 'user@example.com',
+    restaurantId: `previous-${index + 1}`,
+    restaurantName: `Previous ${index + 1}`,
+    restaurantAddress: '123 Main Street',
+    qrToken: `previous-token-${index + 1}`,
+    awardedXp: 25,
+    awardedPoints: 25,
+    createdAt: new Date(`2026-05-24T0${index}:00:00.000Z`),
+  }));
   const { service } = createService({
+    checkins,
     now: new Date('2026-05-24T23:30:00.000Z'),
   });
 
@@ -326,7 +340,7 @@ test('CheckInService rejects scans outside breakfast, lunch, and dinner windows'
       latitude: 23.7002,
       longitude: 90.4002,
     }),
-    (error) => error.code === 'checkin_outside_meal_window',
+    (error) => error.code === 'daily_checkin_limit_reached',
   );
 });
 
@@ -353,6 +367,36 @@ test('CheckInService rejects scans when the user is too far from the restaurant 
       error.code === 'checkin_out_of_range' &&
       error.message ===
         'You are too far from this restaurant to check in. Make sure you are at the restaurant and scanning its QR code.',
+  );
+});
+
+test('CheckInService honors a restaurant-configured check-in radius', async () => {
+  const { service } = createService({
+    restaurants: [makeRestaurant({ checkinRadiusMeters: 500 })],
+  });
+
+  const result = await service.scanQr({
+    accessToken: 'user-1',
+    qrToken: 'token-1234',
+    latitude: 23.703,
+    longitude: 90.403,
+  });
+
+  assert.equal(result.data.restaurantId, 'restaurant-1');
+});
+
+test('CheckInService rejects inaccurate location fixes when provided', async () => {
+  const { service } = createService();
+
+  await assert.rejects(
+    service.scanQr({
+      accessToken: 'user-1',
+      qrToken: 'token-1234',
+      latitude: 23.7002,
+      longitude: 90.4002,
+      accuracy: 250,
+    }),
+    (error) => error.code === 'checkin_location_inaccurate',
   );
 });
 

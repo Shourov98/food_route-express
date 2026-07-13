@@ -2,6 +2,23 @@ import { ApplicationError, validationError } from '../../core/ApplicationError.j
 import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/authorization.js';
 import { buildPaginationMeta } from '../../shared/pagination.js';
 
+const ACTIVE_CITIES = ['Mexico City', 'Monterrey', 'Guadalajara'];
+const PRIMARY_RADIUS_KM = 5;
+const SECONDARY_RADIUS_KM = 15;
+
+function normalizeCity(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function activeCityNames() {
+  return [...ACTIVE_CITIES];
+}
+
+function isActiveCity(value) {
+  const normalized = normalizeCity(value);
+  return ACTIVE_CITIES.some((city) => normalizeCity(city) === normalized);
+}
+
 function distanceKm(latitude, longitude, restaurantLatitude, restaurantLongitude) {
   if (latitude === null || longitude === null) {
     return null;
@@ -125,7 +142,9 @@ export class RestaurantDiscoveryService {
   async listRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude }) {
     const user = await this.getCurrentUser(accessToken);
     const favoriteIds = await this.favoriteIds(user.uid);
-    let records = (await this.restaurantRepository.listAll()).filter((record) => record.status === 'active');
+    let records = (await this.restaurantRepository.listAll()).filter(
+      (record) => record.status === 'active' && isActiveCity(record.city),
+    );
     records = this.filterRestaurants(records, { search, city });
     return this.buildListResponse({ records, page, pageSize, latitude, longitude, favoriteIds });
   }
@@ -134,7 +153,8 @@ export class RestaurantDiscoveryService {
     const user = await this.getCurrentUser(accessToken);
     const favoriteIds = await this.favoriteIds(user.uid);
     let records = (await this.restaurantRepository.listAll()).filter(
-      (record) => record.status === 'active' && supportsFeature(record, 'featuredListing'),
+      (record) =>
+        record.status === 'active' && isActiveCity(record.city) && supportsFeature(record, 'featuredListing'),
     );
     records = this.filterRestaurants(records, { search, city });
     return this.buildListResponse({ records, page, pageSize, latitude, longitude, favoriteIds });
@@ -145,10 +165,19 @@ export class RestaurantDiscoveryService {
     const favoriteIds = await this.favoriteIds(user.uid);
     const effectiveCity = city || (hasLocation(latitude, longitude) ? null : user.city || null);
     let records = (await this.restaurantRepository.listAll()).filter(
-      (record) => record.status === 'active' && supportsFeature(record, 'proximityAlerts'),
+      (record) =>
+        record.status === 'active' && isActiveCity(record.city) && supportsFeature(record, 'proximityAlerts'),
     );
     records = this.filterRestaurants(records, { search, city: effectiveCity });
-    return this.buildListResponse({ records, page, pageSize, latitude, longitude, favoriteIds });
+    return this.buildListResponse({
+      records,
+      page,
+      pageSize,
+      latitude,
+      longitude,
+      favoriteIds,
+      enforceProximityBands: hasLocation(latitude, longitude),
+    });
   }
 
   async getRestaurant({ accessToken, restaurantId, latitude, longitude }) {
@@ -242,8 +271,16 @@ export class RestaurantDiscoveryService {
     return filtered;
   }
 
-  async buildListResponse({ records, page, pageSize, latitude, longitude, favoriteIds }) {
-    const items = await Promise.all(
+  async buildListResponse({
+    records,
+    page,
+    pageSize,
+    latitude,
+    longitude,
+    favoriteIds,
+    enforceProximityBands = false,
+  }) {
+    let items = await Promise.all(
       records.map(async (record) =>
         listItem(record, {
           latitude,
@@ -253,6 +290,20 @@ export class RestaurantDiscoveryService {
         }),
       ),
     );
+    let radiusKm = null;
+    if (enforceProximityBands) {
+      const primaryItems = items.filter((item) => item.distanceKm !== null && item.distanceKm <= PRIMARY_RADIUS_KM);
+      const secondaryItems = items.filter(
+        (item) => item.distanceKm !== null && item.distanceKm <= SECONDARY_RADIUS_KM,
+      );
+      if (primaryItems.length) {
+        items = primaryItems;
+        radiusKm = PRIMARY_RADIUS_KM;
+      } else {
+        items = secondaryItems;
+        radiusKm = SECONDARY_RADIUS_KM;
+      }
+    }
     items.sort((left, right) => {
       if (left.distanceKm === null && right.distanceKm !== null) return 1;
       if (left.distanceKm !== null && right.distanceKm === null) return -1;
@@ -266,6 +317,15 @@ export class RestaurantDiscoveryService {
     return {
       items: items.slice(start, start + pageSize),
       pagination: buildPaginationMeta({ page, pageSize, totalItems }),
+      serviceArea: {
+        activeCities: activeCityNames(),
+        radiusKm,
+        outOfServiceArea: enforceProximityBands && items.length === 0,
+        message:
+          enforceProximityBands && items.length === 0
+            ? 'Food Route is currently available in Mexico City, Monterrey, and Guadalajara. Choose one of these cities manually to browse restaurants.'
+            : null,
+      },
     };
   }
 
@@ -276,7 +336,7 @@ export class RestaurantDiscoveryService {
 
   async getActiveRestaurant(restaurantId) {
     const restaurant = await this.restaurantRepository.getById(restaurantId);
-    if (!restaurant || restaurant.status !== 'active') {
+    if (!restaurant || restaurant.status !== 'active' || !isActiveCity(restaurant.city)) {
       throw new ApplicationError({
         code: 'restaurant_not_found',
         message: 'No restaurant found for the provided identifier.',

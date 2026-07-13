@@ -50,6 +50,16 @@ class FakeRewardRedemptionRepository {
   async delete(id) {
     return this.records.delete(id);
   }
+  async getById(id) {
+    return this.records.get(id) ?? null;
+  }
+  async update(id, record) {
+    this.records.set(id, record);
+    return record;
+  }
+  async listByUser(userId) {
+    return [...this.records.values()].filter((record) => record.userId === userId);
+  }
 }
 
 class FakeDailyRewardRepository extends FakeRewardRepository {}
@@ -128,9 +138,14 @@ class FakePointsRepository {
   }
 }
 
-class FakeXpRepository {
-  async listByUser() {
-    return [];
+class FakeXpRepository extends FakePointsRepository {
+  async delete(recordId) {
+    const index = this.records.findIndex((record) => record.id === recordId);
+    if (index === -1) {
+      return false;
+    }
+    this.records.splice(index, 1);
+    return true;
   }
 }
 
@@ -278,6 +293,7 @@ test('SpinService awards points and stores spin history', async () => {
     },
   ]);
   const pointsRepository = new FakePointsRepository();
+  const xpRepository = new FakeXpRepository();
   const spinService = new SpinService({
     dailyRewardRepository,
     spinRepository: new FakeSpinRepository(),
@@ -285,7 +301,7 @@ test('SpinService awards points and stores spin history', async () => {
     userRepository: new FakeUserRepository([makeUser({ uid: 'user-1', role: 'user' })]),
     identityProvider: new FakeIdentityProvider(),
     xpService: new XpService({
-      xpRepository: new FakeXpRepository(),
+      xpRepository,
       pointsRepository,
     }),
     randomNumber: () => 0,
@@ -295,6 +311,7 @@ test('SpinService awards points and stores spin history', async () => {
   assert.equal(result.spin.rewardId, 'daily-1');
   assert.equal(result.remainingQuantityAvailable, 2);
   assert.equal(pointsRepository.records.length, 1);
+  assert.equal(xpRepository.records.length, 1);
 });
 
 test('RewardRedemptionService redeems reward and sends reward-claimed push', async () => {
@@ -337,8 +354,116 @@ test('RewardRedemptionService redeems reward and sends reward-claimed push', asy
     rewardId: 'reward-1',
   });
 
-  assert.equal(result.redemption.status, 'claimed');
+  assert.equal(result.redemption.status, 'pending');
+  assert.equal(typeof result.redemption.redemptionCode, 'string');
+  assert.ok(result.redemption.expiresAt instanceof Date);
   assert.equal(pushNotificationService.messages.length, 1);
   assert.equal(pushNotificationService.messages[0].recipientId, 'user-1');
   assert.equal(pushNotificationService.messages[0].data.type, 'reward_claimed');
+});
+
+test('RewardRedemptionService rejects duplicate reward redemption by the same user', async () => {
+  const now = new Date();
+  const xpService = new FakeRewardXpService(300);
+  const rewardRepository = new FakeRewardRepository([
+    {
+      id: 'reward-1',
+      title: '20% Off Coupon',
+      description: 'Discount reward',
+      rewardImageUrl: null,
+      rewardCategory: 'coupon',
+      pointsRequired: 100,
+      quantityAvailable: 5,
+      xpPoints: 0,
+      foodItemName: null,
+      discountPercentage: 20,
+      giftCardCode: null,
+      termsAndConditions: null,
+      imageUrl: null,
+      isActive: true,
+      hasExpiry: false,
+      expiresAt: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]);
+  const redemptionRepository = new FakeRewardRedemptionRepository([
+    {
+      id: 'redemption-1',
+      rewardId: 'reward-1',
+      userId: 'user-1',
+      status: 'pending',
+      redeemedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]);
+  const service = new RewardRedemptionService({
+    rewardRepository,
+    rewardRedemptionRepository: redemptionRepository,
+    userRepository: new FakeUserRepository([makeUser({ uid: 'user-1', role: 'user' })]),
+    identityProvider: new FakeIdentityProvider(),
+    xpService,
+  });
+
+  await assert.rejects(
+    service.redeemReward({
+      accessToken: 'user-1',
+      rewardId: 'reward-1',
+    }),
+    (error) => error.code === 'reward_already_redeemed',
+  );
+});
+
+test('RewardRedemptionService rejects the fourth reward redemption in one UTC day', async () => {
+  const now = new Date();
+  const xpService = new FakeRewardXpService(500);
+  const rewardRepository = new FakeRewardRepository([
+    {
+      id: 'reward-4',
+      title: 'Fourth Coupon',
+      description: 'Discount reward',
+      rewardImageUrl: null,
+      rewardCategory: 'coupon',
+      pointsRequired: 100,
+      quantityAvailable: 5,
+      xpPoints: 0,
+      foodItemName: null,
+      discountPercentage: 20,
+      giftCardCode: null,
+      termsAndConditions: null,
+      imageUrl: null,
+      isActive: true,
+      hasExpiry: false,
+      expiresAt: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]);
+  const redemptionRepository = new FakeRewardRedemptionRepository(
+    [1, 2, 3].map((index) => ({
+      id: `redemption-${index}`,
+      rewardId: `reward-${index}`,
+      userId: 'user-1',
+      status: 'pending',
+      redeemedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })),
+  );
+  const service = new RewardRedemptionService({
+    rewardRepository,
+    rewardRedemptionRepository: redemptionRepository,
+    userRepository: new FakeUserRepository([makeUser({ uid: 'user-1', role: 'user' })]),
+    identityProvider: new FakeIdentityProvider(),
+    xpService,
+  });
+
+  await assert.rejects(
+    service.redeemReward({
+      accessToken: 'user-1',
+      rewardId: 'reward-4',
+    }),
+    (error) => error.code === 'daily_reward_redemption_limit_reached',
+  );
 });

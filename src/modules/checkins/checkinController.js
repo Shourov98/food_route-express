@@ -16,6 +16,8 @@ export function createCheckInController({ getCheckInService, config }) {
         qrToken: payload.qrToken,
         latitude: payload.latitude,
         longitude: payload.longitude,
+        accuracy: payload.accuracy,
+        locationCapturedAt: payload.locationCapturedAt,
       });
       res.status(201).json(successResponse(result.data, result.message));
     },

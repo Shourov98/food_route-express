@@ -43,6 +43,7 @@ export class UserService {
     leaderboardService,
     checkinRepository,
     rewardRedemptionRepository = null,
+    receiptUploadRepository = null,
     imageStorage,
     restaurantRepository = null,
     proximityAlertRepository = null,
@@ -57,6 +58,7 @@ export class UserService {
     this.leaderboardService = leaderboardService;
     this.checkinRepository = checkinRepository;
     this.rewardRedemptionRepository = rewardRedemptionRepository;
+    this.receiptUploadRepository = receiptUploadRepository;
     this.imageStorage = imageStorage;
     this.restaurantRepository = restaurantRepository;
     this.proximityAlertRepository = proximityAlertRepository;
@@ -222,6 +224,16 @@ export class UserService {
       city: user.city ?? '',
       country: user.country ?? '',
     });
+    if (record) {
+      await this.xpService.awardXp({
+        userId: user.uid,
+        delta: pointsDelta,
+        sourceType: 'social_share',
+        sourceId: shareId,
+        city: user.city ?? '',
+        country: user.country ?? '',
+      });
+    }
     const currentPoints = await this.xpService.getTotalPoints(user.uid);
     return {
       awarded: Boolean(record),
@@ -272,9 +284,33 @@ export class UserService {
     };
   }
 
+  async getReceiptSharePreview({ accessToken, receiptUploadId }) {
+    const user = await this.getCurrentUser(accessToken);
+    const receiptUpload = await this.requireOwnedReceiptUpload({
+      userId: user.uid,
+      receiptUploadId,
+    });
+    return {
+      shareType: 'receipt',
+      entityId: receiptUpload.id,
+      title: `I uploaded a receipt at ${receiptUpload.restaurantName}`,
+      text: `I earned ${receiptUpload.awardedPoints} points from my Food Route receipt upload.`,
+      imageUrl: receiptUpload.receiptImageUrl,
+      pointsReward: 50,
+      restaurantId: receiptUpload.restaurantId,
+      restaurantName: receiptUpload.restaurantName,
+      awardedPoints: receiptUpload.awardedPoints,
+      createdAt: receiptUpload.createdAt,
+    };
+  }
+
   async resolveSocialSharePoints({ userId, shareType, entityId }) {
     if (shareType === 'checkin') {
       await this.requireOwnedCheckin({ userId, checkinId: entityId });
+      return 50;
+    }
+    if (shareType === 'receipt') {
+      await this.requireOwnedReceiptUpload({ userId, receiptUploadId: entityId });
       return 50;
     }
     await this.requireOwnedRewardRedemption({ userId, redemptionId: entityId });
@@ -296,6 +332,20 @@ export class UserService {
         });
       }
       return recentCheckin.id;
+    }
+    if (shareType === 'receipt') {
+      if (!this.receiptUploadRepository) {
+        throw new Error('Receipt upload repository is not configured.');
+      }
+      const uploads = await this.receiptUploadRepository.listByUser(userId);
+      if (!uploads.length) {
+        throw new ApplicationError({
+          code: 'receipt_upload_not_found',
+          message: 'No receipt upload found for the provided identifier.',
+          statusCode: 404,
+        });
+      }
+      return uploads[0].id;
     }
     if (!this.rewardRedemptionRepository) {
       throw new Error('Reward redemption repository is not configured.');
@@ -339,6 +389,21 @@ export class UserService {
       });
     }
     return redemption;
+  }
+
+  async requireOwnedReceiptUpload({ userId, receiptUploadId }) {
+    if (!this.receiptUploadRepository) {
+      throw new Error('Receipt upload repository is not configured.');
+    }
+    const receiptUpload = await this.receiptUploadRepository.getById(receiptUploadId);
+    if (!receiptUpload || receiptUpload.userId !== userId) {
+      throw new ApplicationError({
+        code: 'receipt_upload_not_found',
+        message: 'No receipt upload found for the provided identifier.',
+        statusCode: 404,
+      });
+    }
+    return receiptUpload;
   }
 
   async getXpHistory({ accessToken, page, pageSize }) {

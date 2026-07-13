@@ -42,6 +42,21 @@ export class FirestoreReceiptUploadRepository {
     const snapshot = await this.collection.where('checkinId', '==', checkinId).limit(1).get();
     return snapshot.empty ? null : receiptUploadFromData(snapshot.docs[0].data());
   }
+
+  async getById(receiptUploadId) {
+    const snapshot = await this.collection.doc(receiptUploadId).get();
+    if (!snapshot.exists) {
+      return null;
+    }
+    return receiptUploadFromData(snapshot.data());
+  }
+
+  async listByUser(userId) {
+    const snapshot = await this.collection.where('userId', '==', userId).get();
+    return snapshot.docs
+      .map((doc) => receiptUploadFromData(doc.data()))
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  }
 }
 
 export function buildReceiptUploadRecordId() {

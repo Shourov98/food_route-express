@@ -9,6 +9,7 @@ import { buildOpenApiSpec } from './docs/openapi.js';
 import { renderSwaggerUiHtml } from './docs/swaggerUiHtml.js';
 import { loadConfig } from './config.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { createIdempotencyKeyMiddleware } from './middleware/idempotencyKey.js';
 import { registerRoutes } from './routes/index.js';
 
 function createRequestIdMiddleware() {
@@ -67,6 +68,7 @@ export function createApp(overrides = {}) {
   app.use(cors(createCorsOptions(config)));
   app.use(express.json({ limit: config.requestBodyLimit }));
   app.use(express.urlencoded({ extended: true, limit: config.requestBodyLimit }));
+  app.use(createIdempotencyKeyMiddleware(config));
 
   app.get(`${config.apiV1Prefix}/health`, (req, res) => {
     res.json({ status: 'ok' });

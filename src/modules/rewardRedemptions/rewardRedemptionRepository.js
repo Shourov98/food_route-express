@@ -30,10 +30,12 @@ function redemptionFromData(data = {}, fallbackId = 'unknown-redemption') {
     foodItemName: data.foodItemName ?? null,
     discountPercentage: data.discountPercentage ?? null,
     giftCardCode: data.giftCardCode ?? null,
+    redemptionCode: data.redemptionCode ?? data.code ?? null,
     termsAndConditions: data.termsAndConditions ?? null,
     status: String(data.status ?? 'claimed').toLowerCase(),
     redeemedAt,
     usedAt: toDate(data.usedAt),
+    expiresAt: toDate(data.expiresAt),
     createdAt,
     updatedAt,
   };
