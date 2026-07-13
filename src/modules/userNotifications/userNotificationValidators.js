@@ -1,6 +1,15 @@
 import { validationError } from '../../core/ApplicationError.js';
 
-const CATEGORIES = new Set(['all', 'points', 'rewards', 'challenges', 'promotions', 'location']);
+const CATEGORIES = new Set([
+  'all',
+  'points',
+  'rewards',
+  'challenges',
+  'promotions',
+  'nearby',
+  'general',
+  'location',
+]);
 
 export function parseNotificationListQuery(query) {
   let category = null;

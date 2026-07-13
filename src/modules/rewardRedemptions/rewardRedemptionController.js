@@ -30,5 +30,22 @@ export function createRewardRedemptionController({ getRewardRedemptionService, c
         redemptionId: req.params.redemptionId,
       })));
     },
+    async listAdminRedemptions(req, res) {
+      const { page, pageSize } = parsePagination(req.query);
+      res.json(successResponse(await (await service()).listAdminRedemptions({
+        accessToken: requireBearerToken(req),
+        page,
+        pageSize,
+        statusFilter: req.query.status,
+        search: req.query.search,
+      })));
+    },
+    async updateAdminRedemptionStatus(req, res) {
+      res.json(successResponse(await (await service()).updateAdminRedemptionStatus({
+        accessToken: requireBearerToken(req),
+        redemptionId: req.params.redemptionId,
+        status: req.body?.status,
+      })));
+    },
   };
 }

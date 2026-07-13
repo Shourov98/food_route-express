@@ -175,7 +175,9 @@ export class UserNotificationService {
       .map((record) => ({
         id: `campaign:${record.id}`,
         type: 'campaign',
-        category: record.campaignCategory === 'reward' ? 'rewards' : 'promotions',
+        category: ['rewards', 'challenges', 'nearby', 'general'].includes(record.campaignCategory)
+          ? record.campaignCategory
+          : 'promotions',
         title: record.campaignTitle,
         body: record.campaignBody,
         sourceId: record.id,
@@ -194,7 +196,7 @@ export class UserNotificationService {
     return records.map((record) => ({
       id: `proximity:${record.id}`,
       type: 'proximity_alert',
-      category: 'location',
+      category: 'nearby',
       title: `${record.restaurantName} is nearby`,
       body: `${record.restaurantName} is ${record.distanceKm.toFixed(1)} km away. Tap to open directions.`,
       sourceId: record.id,

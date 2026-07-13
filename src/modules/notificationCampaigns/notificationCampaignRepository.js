@@ -14,11 +14,15 @@ function toDate(value) {
 }
 
 function campaignFromData(data = {}, fallbackId = 'unknown-campaign') {
+  const rawCategory = String(data.campaignCategory ?? data.category ?? 'promotions').toLowerCase();
+  const campaignCategory =
+    rawCategory === 'promotional' ? 'promotions' : rawCategory === 'reward' ? 'rewards' : rawCategory;
+
   return {
     id: String(data.id ?? fallbackId),
     campaignTitle: String(data.campaignTitle ?? data.campaignName ?? ''),
     campaignBody: String(data.campaignBody ?? data.messagePreview ?? ''),
-    campaignCategory: String(data.campaignCategory ?? data.category ?? 'promotional').toLowerCase(),
+    campaignCategory,
     targetAudience: String(data.targetAudience ?? data.audience ?? 'all_users').toLowerCase(),
     cityName: data.cityName ?? data.city ?? null,
     ageGroup: data.ageGroup ?? data.age ?? null,

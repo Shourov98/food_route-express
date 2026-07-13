@@ -18,7 +18,11 @@ import {
   createRestaurantDishRouter,
   createRestaurantItemRedemptionRouter,
 } from '../modules/restaurantItemRedemptions/restaurantItemRedemptionRouter.js';
-import { createRewardRedemptionRouter, createUserRewardRedemptionRouter } from '../modules/rewardRedemptions/rewardRedemptionRouter.js';
+import {
+  createAdminRewardRedemptionRouter,
+  createRewardRedemptionRouter,
+  createUserRewardRedemptionRouter,
+} from '../modules/rewardRedemptions/rewardRedemptionRouter.js';
 import { createRewardRouter, createUserRewardCatalogRouter } from '../modules/rewards/rewardRouter.js';
 import { createReviewRouter } from '../modules/reviews/reviewRouter.js';
 import { createAdminRouteRouter, createUserRouteRouter } from '../modules/routes/routeRouter.js';
@@ -46,6 +50,7 @@ export function registerRoutes(app, config) {
   app.use(`${config.apiV1Prefix}/admin/qr-codes`, createQrCodeRouter(config));
   app.use(`${config.apiV1Prefix}/admin/restaurants`, createRestaurantRouter(config));
   app.use(`${config.apiV1Prefix}/admin/rewards`, createRewardRouter(config));
+  app.use(`${config.apiV1Prefix}/admin/reward-redemptions`, createAdminRewardRedemptionRouter(config));
   app.use(`${config.apiV1Prefix}/admin/routes`, createAdminRouteRouter(config));
   app.use(`${config.apiV1Prefix}/admin/spin-wheel`, createAdminSpinRouter(config));
   app.use(`${config.apiV1Prefix}/admin/support-requests`, createAdminSupportRequestRouter(config));

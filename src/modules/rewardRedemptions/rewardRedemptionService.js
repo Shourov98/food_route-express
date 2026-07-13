@@ -5,6 +5,7 @@ import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/a
 import { buildPaginationMeta } from '../../shared/pagination.js';
 
 const ACTIVE_REDEMPTION_STATUSES = new Set(['pending', 'claimed', 'used', 'redeemed']);
+const ADMIN_REDEMPTION_STATUSES = new Set(['pending', 'used', 'expired', 'cancelled', 'rejected']);
 const MAX_DAILY_REDEMPTIONS = 3;
 
 function sameUtcDate(left, right) {
@@ -19,6 +20,7 @@ function redemptionData(record) {
   return {
     id: record.id,
     rewardId: record.rewardId,
+    userId: record.userId,
     sourceType: record.sourceType,
     sourceId: record.sourceId,
     rewardTitle: record.rewardTitle,
@@ -156,6 +158,42 @@ export class RewardRedemptionService {
     };
   }
 
+  async listAdminRedemptions({ accessToken, page, pageSize, statusFilter = null, search = '' }) {
+    await this.getCurrentAdmin(accessToken);
+    let records = await this.rewardRedemptionRepository.listAll();
+    if (statusFilter) {
+      const mapped = this.normalizeStatusFilter(statusFilter);
+      records = records.filter((record) => record.status === mapped);
+    }
+
+    const needle = String(search || '').trim().toLowerCase();
+    if (needle) {
+      records = records.filter((record) =>
+        [
+          record.rewardTitle,
+          record.redemptionCode,
+          record.userId,
+          record.rewardCategory,
+          record.status,
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(needle)),
+      );
+    }
+
+    records = records.sort(
+      (left, right) =>
+        (right.redeemedAt ?? right.createdAt).getTime() - (left.redeemedAt ?? left.createdAt).getTime(),
+    );
+
+    const totalItems = records.length;
+    const start = (page - 1) * pageSize;
+    return {
+      items: records.slice(start, start + pageSize).map(redemptionData),
+      pagination: buildPaginationMeta({ page, pageSize, totalItems }),
+    };
+  }
+
   normalizeStatusFilter(statusFilter) {
     const normalized = String(statusFilter).trim().toLowerCase();
     if (normalized === 'available' || normalized === 'claimed' || normalized === 'pending') {
@@ -208,6 +246,33 @@ export class RewardRedemptionService {
       userPointsAfter: await this.xpService.getTotalPoints(user.uid),
       remainingQuantityAvailable: reward?.quantityAvailable ?? 0,
     };
+  }
+
+  async updateAdminRedemptionStatus({ accessToken, redemptionId, status }) {
+    await this.getCurrentAdmin(accessToken);
+    const normalized = String(status || '').trim().toLowerCase();
+    if (!ADMIN_REDEMPTION_STATUSES.has(normalized)) {
+      throw validationError('Status must be one of: pending, used, expired, cancelled, rejected.');
+    }
+
+    const record = await this.rewardRedemptionRepository.getById(redemptionId);
+    if (!record) {
+      throw new ApplicationError({
+        code: 'redemption_not_found',
+        message: 'No reward redemption found for the provided identifier.',
+        statusCode: 404,
+      });
+    }
+
+    const now = new Date();
+    const updated = {
+      ...record,
+      status: normalized,
+      usedAt: normalized === 'used' ? record.usedAt ?? now : record.usedAt,
+      updatedAt: now,
+    };
+    await this.rewardRedemptionRepository.update(record.id, updated);
+    return redemptionData(updated);
   }
 
   validateReward(reward, now) {
@@ -288,6 +353,25 @@ export class RewardRedemptionService {
       roleErrorStatusCode: 404,
       blockedErrorCode: 'user_blocked',
       blockedErrorMessage: 'The user account is blocked.',
+    });
+  }
+
+  async getCurrentAdmin(accessToken) {
+    const admin = await getAuthenticatedAccount({
+      accessToken,
+      identityProvider: this.identityProvider,
+      userRepository: this.userRepository,
+      notFoundCode: 'admin_not_found',
+      notFoundMessage: 'No admin account found for the provided credentials.',
+      notFoundStatusCode: 404,
+    });
+    return requireActiveRoles({
+      record: admin,
+      allowedRoles: new Set(['admin', 'super_admin']),
+      roleErrorCode: 'admin_not_found',
+      roleErrorMessage: 'No admin account found for the provided credentials.',
+      blockedErrorCode: 'admin_blocked',
+      blockedErrorMessage: 'The admin account is blocked.',
     });
   }
 

@@ -1,6 +1,14 @@
 import { validationError } from '../../core/ApplicationError.js';
 
-const CAMPAIGN_CATEGORIES = new Set(['promotional', 'onboarding', 'reward', 'retention']);
+const CAMPAIGN_CATEGORIES = new Set([
+  'promotions',
+  'rewards',
+  'challenges',
+  'nearby',
+  'general',
+  'promotional',
+  'reward',
+]);
 const TARGET_AUDIENCES = new Set([
   'all_users',
   'nearby_users',
@@ -84,6 +92,16 @@ function optionalEnum(body, aliases, field, values) {
   return normalized;
 }
 
+function normalizeCampaignCategory(value) {
+  if (value === 'promotional') {
+    return 'promotions';
+  }
+  if (value === 'reward') {
+    return 'rewards';
+  }
+  return value;
+}
+
 function optionalDate(body, aliases, field) {
   const value = getAliased(body, aliases);
   if (value === undefined || value === null || value === '') {
@@ -131,7 +149,7 @@ export function validateNotificationCampaignCreate(body) {
       min: 5,
       max: 1000,
     }),
-    campaignCategory: optionalEnum(body, ['campaignCategory', 'category'], 'campaignCategory', CAMPAIGN_CATEGORIES),
+    campaignCategory: normalizeCampaignCategory(optionalEnum(body, ['campaignCategory', 'category'], 'campaignCategory', CAMPAIGN_CATEGORIES)),
     targetAudience: optionalEnum(body, ['targetAudience'], 'targetAudience', TARGET_AUDIENCES),
     cityName: optionalString(body, ['cityName', 'city', 'targetCity'], 'cityName', { min: 2, max: 120 }) ?? null,
     ageGroup: optionalString(body, ['ageGroup', 'age', 'targetAgeGroup'], 'ageGroup', { min: 1, max: 50 }) ?? null,
@@ -174,7 +192,7 @@ export function validateNotificationCampaignUpdate(body) {
       min: 5,
       max: 1000,
     }),
-    campaignCategory: optionalEnum(body, ['campaignCategory', 'category'], 'campaignCategory', CAMPAIGN_CATEGORIES),
+    campaignCategory: normalizeCampaignCategory(optionalEnum(body, ['campaignCategory', 'category'], 'campaignCategory', CAMPAIGN_CATEGORIES)),
     targetAudience: optionalEnum(body, ['targetAudience'], 'targetAudience', TARGET_AUDIENCES),
     cityName: optionalString(body, ['cityName', 'city', 'targetCity'], 'cityName', { min: 2, max: 120 }),
     ageGroup: optionalString(body, ['ageGroup', 'age', 'targetAgeGroup'], 'ageGroup', { min: 1, max: 50 }),
