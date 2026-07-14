@@ -56,6 +56,22 @@ class FakeRouteRepository {
   }
 }
 
+class FakeRouteProgressRepository {
+  constructor(records = []) {
+    this.records = records;
+  }
+
+  async listByUserAndRoute({ userId, routeId }) {
+    return this.records
+      .filter((record) => record.userId === userId && record.routeId === routeId)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
+
+  async getLatestByUserAndRoute({ userId, routeId }) {
+    return (await this.listByUserAndRoute({ userId, routeId }))[0] ?? null;
+  }
+}
+
 class FakePlacementRepository {
   constructor(records = []) {
     this.records = new Map(records.map((record) => [record.id, record]));
@@ -223,4 +239,142 @@ test('PlacementService assigns placement for eligible restaurant package', async
 
   assert.equal(result.feature, 'sponsored');
   assert.equal(result.restaurantId, 'restaurant-1');
+});
+
+// ---------------------------------------------------------------------------
+// BR-018 — lazy expiration of stale route progress
+// ---------------------------------------------------------------------------
+
+function makeRoute(overrides = {}) {
+  return {
+    id: 'route-1',
+    routeName: 'Lunch Route',
+    description: 'A city route',
+    city: 'Dhaka',
+    restaurantIds: ['restaurant-1'],
+    status: 'active',
+    requiredVisits: 1,
+    mandatoryOrder: false,
+    pointsPerReceiptUpload: 10,
+    completionBonus: 100,
+    limitPerUser: 1,
+    repeatable: false,
+    cooldownMinutes: 60,
+    createdBy: 'admin-1',
+    createdAt: new Date('2026-06-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+test('BR-018 RouteService marks in_progress progress as expired after the route endDate', async () => {
+  const route = makeRoute({
+    endDate: new Date('2026-06-10T23:59:59.000Z'),
+  });
+  const routeProgress = [
+    {
+      id: 'progress-1',
+      routeId: 'route-1',
+      userId: 'user-1',
+      status: 'in_progress',
+      visitedRestaurantIds: ['restaurant-1'],
+      receiptUploadIds: ['upload-previous'],
+      completedAt: null,
+      lastReceiptUploadedAt: new Date('2026-06-09T09:00:00.000Z'),
+      createdAt: new Date('2026-06-09T09:00:00.000Z'),
+      updatedAt: new Date('2026-06-09T09:00:00.000Z'),
+    },
+  ];
+  const service = new RouteService({
+    routeRepository: new FakeRouteRepository([route]),
+    routeProgressRepository: new FakeRouteProgressRepository(routeProgress),
+    restaurantRepository: new FakeRestaurantRepository([makeRestaurant()]),
+    userRepository: new FakeUserRepository([
+      { uid: 'user-1', role: 'user', isBlocked: false, isVerified: true, city: 'Dhaka' },
+    ]),
+    identityProvider: new FakeIdentityProvider(),
+  });
+
+  // Inject a fixed `now` after the route endDate.
+  const result = await service.toResponse(route, {
+    userId: 'user-1',
+    now: new Date('2026-06-16T09:00:00.000Z'),
+  });
+
+  assert.equal(result.userProgress.status, 'expired');
+  // The DB row is NOT mutated.
+  assert.equal(routeProgress[0].status, 'in_progress');
+});
+
+test('BR-018 RouteService does not expire progress before the route endDate', async () => {
+  const route = makeRoute({
+    endDate: new Date('2026-06-30T23:59:59.000Z'),
+  });
+  const routeProgress = [
+    {
+      id: 'progress-1',
+      routeId: 'route-1',
+      userId: 'user-1',
+      status: 'in_progress',
+      visitedRestaurantIds: ['restaurant-1'],
+      receiptUploadIds: ['upload-previous'],
+      completedAt: null,
+      lastReceiptUploadedAt: new Date('2026-06-09T09:00:00.000Z'),
+      createdAt: new Date('2026-06-09T09:00:00.000Z'),
+      updatedAt: new Date('2026-06-09T09:00:00.000Z'),
+    },
+  ];
+  const service = new RouteService({
+    routeRepository: new FakeRouteRepository([route]),
+    routeProgressRepository: new FakeRouteProgressRepository(routeProgress),
+    restaurantRepository: new FakeRestaurantRepository([makeRestaurant()]),
+    userRepository: new FakeUserRepository([
+      { uid: 'user-1', role: 'user', isBlocked: false, isVerified: true, city: 'Dhaka' },
+    ]),
+    identityProvider: new FakeIdentityProvider(),
+  });
+
+  const result = await service.toResponse(route, {
+    userId: 'user-1',
+    now: new Date('2026-06-16T09:00:00.000Z'),
+  });
+
+  assert.equal(result.userProgress.status, 'in_progress');
+});
+
+test('BR-018 RouteService keeps completed progress as completed even after the route endDate', async () => {
+  const route = makeRoute({
+    endDate: new Date('2026-06-10T23:59:59.000Z'),
+  });
+  const routeProgress = [
+    {
+      id: 'progress-1',
+      routeId: 'route-1',
+      userId: 'user-1',
+      status: 'completed',
+      visitedRestaurantIds: ['restaurant-1'],
+      receiptUploadIds: ['upload-previous'],
+      completedAt: new Date('2026-06-08T09:00:00.000Z'),
+      lastReceiptUploadedAt: new Date('2026-06-08T09:00:00.000Z'),
+      createdAt: new Date('2026-06-08T09:00:00.000Z'),
+      updatedAt: new Date('2026-06-08T09:00:00.000Z'),
+    },
+  ];
+  const service = new RouteService({
+    routeRepository: new FakeRouteRepository([route]),
+    routeProgressRepository: new FakeRouteProgressRepository(routeProgress),
+    restaurantRepository: new FakeRestaurantRepository([makeRestaurant()]),
+    userRepository: new FakeUserRepository([
+      { uid: 'user-1', role: 'user', isBlocked: false, isVerified: true, city: 'Dhaka' },
+    ]),
+    identityProvider: new FakeIdentityProvider(),
+  });
+
+  const result = await service.toResponse(route, {
+    userId: 'user-1',
+    now: new Date('2026-06-16T09:00:00.000Z'),
+  });
+
+  // Completed rows are never re-stamped to expired — the user earned it.
+  assert.equal(result.userProgress.status, 'completed');
 });

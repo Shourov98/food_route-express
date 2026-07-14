@@ -392,9 +392,9 @@ export class RouteService {
     return restaurants;
   }
 
-  async toResponse(record, { restaurants = null, userId = null } = {}) {
+  async toResponse(record, { restaurants = null, userId = null, now = new Date() } = {}) {
     const restaurantRecords = restaurants ?? (await this.getRestaurantsByIds(record.restaurantIds));
-    const progress = userId ? await this.routeProgressForUser({ userId, route: record }) : null;
+    const progress = userId ? await this.routeProgressForUser({ userId, route: record, now }) : null;
     return {
       id: record.id,
       routeName: record.routeName,
@@ -422,7 +422,7 @@ export class RouteService {
     };
   }
 
-  async routeProgressForUser({ userId, route }) {
+  async routeProgressForUser({ userId, route, now = new Date() }) {
     if (!this.routeProgressRepository) {
       return null;
     }
@@ -442,9 +442,20 @@ export class RouteService {
       };
     }
     const visitedCount = new Set(latest.visitedRestaurantIds).size;
+    // BR-018 lazy expiration: when the route's endDate has passed and the
+    // user never reached completion, the row stays in the DB but we surface
+    // it as 'expired' in the response. No DB write needed — the next time
+    // the user opens the route or a receipt upload is attempted, the eligibility
+    // filter still uses route.endDate (see receiptUploadService.resolveEligibleRoutes).
+    const lazyStatus =
+      route.endDate &&
+      latest.status === 'in_progress' &&
+      route.endDate.getTime() <= now.getTime()
+        ? 'expired'
+        : latest.status;
     return {
       id: latest.id,
-      status: latest.status,
+      status: lazyStatus,
       visitedRestaurantIds: latest.visitedRestaurantIds,
       receiptUploadIds: latest.receiptUploadIds,
       completedAt: latest.completedAt,

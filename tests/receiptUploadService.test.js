@@ -407,3 +407,297 @@ test('ReceiptUploadService rejects route receipt uploads during route cooldown',
     (error) => error.code === 'route_receipt_cooldown_active',
   );
 });
+
+// ---------------------------------------------------------------------------
+// BR-017 / BR-018 — additional route progress edge cases
+// ---------------------------------------------------------------------------
+
+test('BR-017 same restaurant counts only once per route', async () => {
+  const { service, xpRepository } = createService({
+    routes: [
+      {
+        id: 'route-1',
+        routeName: 'Lunch Route',
+        city: 'Dhaka',
+        restaurantIds: ['restaurant-1', 'restaurant-2'],
+        status: 'active',
+        requiredVisits: 2,
+        mandatoryOrder: false,
+        pointsPerReceiptUpload: 10,
+        completionBonus: 0,
+        repeatable: false,
+        cooldownMinutes: 60,
+        createdAt: new Date('2026-06-16T00:00:00.000Z'),
+        updatedAt: new Date('2026-06-16T00:00:00.000Z'),
+      },
+    ],
+    routeProgress: [
+      {
+        id: 'progress-1',
+        routeId: 'route-1',
+        userId: 'user-1',
+        status: 'in_progress',
+        visitedRestaurantIds: ['restaurant-1'], // already counted
+        receiptUploadIds: ['upload-previous'],
+        completedAt: null,
+        lastReceiptUploadedAt: new Date('2026-05-16T09:00:00.000Z'), // > 60 min ago
+        createdAt: new Date('2026-05-16T09:00:00.000Z'),
+        updatedAt: new Date('2026-05-16T09:00:00.000Z'),
+      },
+    ],
+  });
+
+  const result = await service.uploadReceipt({
+    accessToken: 'user-1',
+    restaurantId: 'restaurant-1', // same restaurant again
+    image: { originalname: 'receipt.png', mimetype: 'image/png', buffer: Buffer.from('x') },
+  });
+
+  // The route response should report that the restaurant is already counted.
+  const routeProgress = result.data.routeProgress[0];
+  assert.equal(routeProgress.reason, 'restaurant_already_counted');
+  assert.deepEqual(routeProgress.visitedRestaurantIds, ['restaurant-1']);
+  // No route_receipt_upload award should fire for the duplicate visit.
+  const routeReceiptAwards = xpRepository.records.filter(
+    (record) => record.sourceType === 'route_receipt_upload',
+  );
+  assert.equal(routeReceiptAwards.length, 0);
+});
+
+test('BR-017 mandatory order rejects out-of-order restaurant uploads', async () => {
+  const { service } = createService({
+    restaurants: [
+      makeRestaurant(),
+      makeRestaurant({ id: 'restaurant-2', name: 'Cafe Two' }),
+      makeRestaurant({ id: 'restaurant-3', name: 'Cafe Three' }),
+    ],
+    checkins: [
+      makeCheckin({ restaurantId: 'restaurant-3', restaurantName: 'Cafe Three' }),
+    ],
+    routes: [
+      {
+        id: 'route-1',
+        routeName: 'Taquera Route',
+        city: 'Dhaka',
+        restaurantIds: ['restaurant-1', 'restaurant-2', 'restaurant-3'],
+        status: 'active',
+        requiredVisits: 3,
+        mandatoryOrder: true,
+        pointsPerReceiptUpload: 10,
+        completionBonus: 0,
+        repeatable: false,
+        cooldownMinutes: 60,
+        createdAt: new Date('2026-06-16T00:00:00.000Z'),
+        updatedAt: new Date('2026-06-16T00:00:00.000Z'),
+      },
+    ],
+    routeProgress: [
+      {
+        id: 'progress-1',
+        routeId: 'route-1',
+        userId: 'user-1',
+        status: 'in_progress',
+        visitedRestaurantIds: ['restaurant-1'],
+        receiptUploadIds: ['upload-previous'],
+        completedAt: null,
+        lastReceiptUploadedAt: new Date('2026-05-16T09:00:00.000Z'),
+        createdAt: new Date('2026-05-16T09:00:00.000Z'),
+        updatedAt: new Date('2026-05-16T09:00:00.000Z'),
+      },
+    ],
+  });
+
+  // User uploads for restaurant-3, but expected next is restaurant-2.
+  const result = await service.uploadReceipt({
+    accessToken: 'user-1',
+    restaurantId: 'restaurant-3',
+    image: { originalname: 'receipt.png', mimetype: 'image/png', buffer: Buffer.from('x') },
+  });
+
+  assert.equal(result.data.routeProgress[0].reason, 'route_order_mismatch');
+  assert.deepEqual(result.data.routeProgress[0].visitedRestaurantIds, ['restaurant-1']);
+});
+
+test('BR-018 non-active routes are skipped (no progress entry created)', async () => {
+  const { service, xpRepository } = createService({
+    routes: [
+      {
+        id: 'route-1',
+        routeName: 'Paused Lunch Route',
+        city: 'Dhaka',
+        restaurantIds: ['restaurant-1'],
+        status: 'paused',
+        requiredVisits: 1,
+        mandatoryOrder: false,
+        pointsPerReceiptUpload: 10,
+        completionBonus: 0,
+        repeatable: false,
+        cooldownMinutes: 60,
+        createdAt: new Date('2026-06-16T00:00:00.000Z'),
+        updatedAt: new Date('2026-06-16T00:00:00.000Z'),
+      },
+    ],
+  });
+
+  const result = await service.uploadReceipt({
+    accessToken: 'user-1',
+    restaurantId: 'restaurant-1',
+    image: { originalname: 'receipt.png', mimetype: 'image/png', buffer: Buffer.from('x') },
+  });
+
+  // routeProgress is empty — the paused route is filtered out before any progress is created.
+  assert.deepEqual(result.data.routeProgress, []);
+  const routeAwards = xpRepository.records.filter((record) =>
+    ['route_receipt_upload', 'route_completion'].includes(record.sourceType),
+  );
+  assert.equal(routeAwards.length, 0);
+});
+
+test('BR-018 routes outside their active date window are skipped', async () => {
+  const { service, xpRepository } = createService({
+    routes: [
+      {
+        id: 'route-1',
+        routeName: 'Future Lunch Route',
+        city: 'Dhaka',
+        restaurantIds: ['restaurant-1'],
+        status: 'active',
+        requiredVisits: 1,
+        mandatoryOrder: false,
+        pointsPerReceiptUpload: 10,
+        completionBonus: 0,
+        repeatable: false,
+        cooldownMinutes: 60,
+        // nowProvider is 2026-06-16T09:00:00.000Z; route starts later
+        startDate: new Date('2026-07-01T00:00:00.000Z'),
+        endDate: new Date('2026-07-14T23:59:59.000Z'),
+        createdAt: new Date('2026-06-16T00:00:00.000Z'),
+        updatedAt: new Date('2026-06-16T00:00:00.000Z'),
+      },
+      {
+        id: 'route-2',
+        routeName: 'Expired Lunch Route',
+        city: 'Dhaka',
+        restaurantIds: ['restaurant-1'],
+        status: 'active',
+        requiredVisits: 1,
+        mandatoryOrder: false,
+        pointsPerReceiptUpload: 10,
+        completionBonus: 0,
+        repeatable: false,
+        cooldownMinutes: 60,
+        // route already ended
+        startDate: new Date('2026-05-01T00:00:00.000Z'),
+        endDate: new Date('2026-05-14T23:59:59.000Z'),
+        createdAt: new Date('2026-05-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+      },
+    ],
+  });
+
+  const result = await service.uploadReceipt({
+    accessToken: 'user-1',
+    restaurantId: 'restaurant-1',
+    image: { originalname: 'receipt.png', mimetype: 'image/png', buffer: Buffer.from('x') },
+  });
+
+  assert.deepEqual(result.data.routeProgress, []);
+  const routeAwards = xpRepository.records.filter((record) =>
+    ['route_receipt_upload', 'route_completion'].includes(record.sourceType),
+  );
+  assert.equal(routeAwards.length, 0);
+});
+
+test('BR-018 repeatable route honours the 7-day repeat cooldown', async () => {
+  const { service } = createService({
+    routes: [
+      {
+        id: 'route-1',
+        routeName: 'Repeatable Lunch Route',
+        city: 'Dhaka',
+        restaurantIds: ['restaurant-1'],
+        status: 'active',
+        requiredVisits: 1,
+        mandatoryOrder: false,
+        pointsPerReceiptUpload: 10,
+        completionBonus: 0,
+        repeatable: true,
+        cooldownMinutes: 60,
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+    ],
+    routeProgress: [
+      {
+        id: 'progress-1',
+        routeId: 'route-1',
+        userId: 'user-1',
+        status: 'completed',
+        visitedRestaurantIds: ['restaurant-1'],
+        receiptUploadIds: ['upload-previous'],
+        // Completed only 1 day ago — should still be inside the 7-day cooldown.
+        completedAt: new Date('2026-06-15T09:00:00.000Z'),
+        lastReceiptUploadedAt: new Date('2026-06-15T09:00:00.000Z'),
+        createdAt: new Date('2026-06-15T09:00:00.000Z'),
+        updatedAt: new Date('2026-06-15T09:00:00.000Z'),
+      },
+    ],
+  });
+
+  const result = await service.uploadReceipt({
+    accessToken: 'user-1',
+    restaurantId: 'restaurant-1',
+    image: { originalname: 'receipt.png', mimetype: 'image/png', buffer: Buffer.from('x') },
+  });
+
+  assert.equal(result.data.routeProgress[0].reason, 'route_repeat_cooldown_active');
+  assert.equal(result.data.routeProgress[0].status, 'completed');
+});
+
+test('BR-018 repeatable route allows restart after the 7-day cooldown', async () => {
+  const { service, xpRepository } = createService({
+    routes: [
+      {
+        id: 'route-1',
+        routeName: 'Repeatable Lunch Route',
+        city: 'Dhaka',
+        restaurantIds: ['restaurant-1'],
+        status: 'active',
+        requiredVisits: 1,
+        mandatoryOrder: false,
+        pointsPerReceiptUpload: 10,
+        completionBonus: 100,
+        repeatable: true,
+        cooldownMinutes: 60,
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+    ],
+    routeProgress: [
+      {
+        id: 'progress-1',
+        routeId: 'route-1',
+        userId: 'user-1',
+        status: 'completed',
+        visitedRestaurantIds: ['restaurant-1'],
+        receiptUploadIds: ['upload-previous'],
+        // Completed > 7 days ago — repeat is allowed.
+        completedAt: new Date('2026-06-01T09:00:00.000Z'),
+        lastReceiptUploadedAt: new Date('2026-06-01T09:00:00.000Z'),
+        createdAt: new Date('2026-06-01T09:00:00.000Z'),
+        updatedAt: new Date('2026-06-01T09:00:00.000Z'),
+      },
+    ],
+  });
+
+  const result = await service.uploadReceipt({
+    accessToken: 'user-1',
+    restaurantId: 'restaurant-1',
+    image: { originalname: 'receipt.png', mimetype: 'image/png', buffer: Buffer.from('x') },
+  });
+
+  // Repeat triggered — new in_progress row created with this receipt counted.
+  assert.equal(result.data.routeProgress[0].reason, null);
+  assert.equal(result.data.routeProgress[0].status, 'completed');
+  assert.ok(xpRepository.records.some((record) => record.sourceType === 'route_completion'));
+});
