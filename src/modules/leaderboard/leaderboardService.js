@@ -1,5 +1,6 @@
 import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/authorization.js';
 import { buildPaginationMeta } from '../../shared/pagination.js';
+import { isEarningSourceType } from './rankingPolicy.js';
 
 export class LeaderboardService {
   constructor({ userRepository, identityProvider, xpRepository, pointsRepository }) {
@@ -59,7 +60,7 @@ export class LeaderboardService {
   async totalXp(userId) {
     const records = await this.xpRepository.listByUser(userId);
     return records
-      .filter((record) => record.sourceType !== 'admin_adjustment')
+      .filter((record) => isEarningSourceType(record.sourceType))
       .reduce((total, record) => total + record.xpDelta, 0);
   }
 
@@ -81,7 +82,7 @@ export class LeaderboardService {
       users.map(async (user) => {
         const records = await this.xpRepository.listByUser(user.uid);
         const activityRecords = records
-          .filter((record) => record.sourceType !== 'admin_adjustment')
+          .filter((record) => isEarningSourceType(record.sourceType))
           .filter((record) => !since || record.createdAt >= since);
         const currentXp = activityRecords
           .reduce((total, record) => total + record.xpDelta, 0);

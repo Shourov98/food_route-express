@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
 import { buildPaginationMeta } from '../../shared/pagination.js';
+import { isEarningSourceType } from '../leaderboard/rankingPolicy.js';
 
 const DEFAULT_LEVELS = [
   { name: 'Explorer', minXp: 0 },
@@ -30,7 +31,7 @@ export class XpService {
     return Math.min(
       MAX_XP,
       records
-        .filter((record) => record.sourceType !== ADMIN_ADJUSTMENT)
+        .filter((record) => isEarningSourceType(record.sourceType))
         .reduce((total, record) => total + record.xpDelta, 0),
     );
   }
