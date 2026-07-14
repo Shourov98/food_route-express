@@ -39,6 +39,11 @@ function rewardFromData(data) {
   };
 }
 
+// Re-export the parser so transactional callers (e.g. BR-006
+// rewardRedemptionService.redeemReward) can normalize a freshly-read reward
+// snapshot without having to duplicate the field-mapping logic.
+export { rewardFromData };
+
 export class FirestoreRewardRepository {
   constructor(firestore) {
     this.collection = firestore.collection('rewards');

@@ -13,6 +13,7 @@ let cachedServicePromise;
 export function getRewardRedemptionService(config) {
   if (!cachedServicePromise) {
     cachedServicePromise = getFirebaseClients(config).then(async ({ app, auth, firestore }) => {
+      const pointsRepository = new FirestorePointsLedgerRepository(firestore);
       return new RewardRedemptionService({
         rewardRepository: new FirestoreRewardRepository(firestore),
         rewardRedemptionRepository: new FirestoreRewardRedemptionRepository(firestore),
@@ -20,8 +21,12 @@ export function getRewardRedemptionService(config) {
         identityProvider: new FirebaseIdentityProvider({ auth, config }),
         xpService: new XpService({
           xpRepository: new FirestoreXpLedgerRepository(firestore),
-          pointsRepository: new FirestorePointsLedgerRepository(firestore),
+          pointsRepository,
         }),
+        // BR-006 hardening: pass the points ledger repo so the redemption
+        // transaction can write a `reward_redemption` row directly inside
+        // the same txn as the stock decrement and redemption insert.
+        pointsRepository,
         pushNotificationService: await buildPushNotificationService({ config, app }),
       });
     });

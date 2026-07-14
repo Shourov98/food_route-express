@@ -108,4 +108,47 @@ export class FirestoreRewardRedemptionRepository {
     await ref.delete();
     return true;
   }
+
+  // --- Transactional read helpers ----------------------------------------
+  //
+  // BR-006 hardening: the dedupe and daily-limit reads below used to run
+  // outside any transaction, so two concurrent redemptions could each see
+  // "no duplicate / count=2" and both succeed. By routing the same queries
+  // through the caller's transaction, Firestore's SERIALIZABLE isolation
+  // guarantees the read and the subsequent write either both succeed or
+  // both fail — closing the duplicate-redemption and TOCTOU windows.
+  //
+  // These helpers accept a Firestore `txn` from `firestore.runTransaction`
+  // (the same shape that FirestoreXpLedgerRepository.createIfAbsent uses).
+  // When called without a `txn`, they fall back to a plain `get()` so the
+  // in-memory test fakes (which have no runTransaction) still work.
+
+  async findActiveRedemptionInTxn({ userId, rewardId, txn = null }) {
+    const query = this.collection
+      .where('userId', '==', userId)
+      .where('rewardId', '==', rewardId)
+      .where('status', 'in', ['pending', 'claimed', 'used', 'redeemed'])
+      .limit(1);
+    const snapshot = txn ? await txn.get(query) : await query.get();
+    return snapshot.empty ? null : redemptionFromData(snapshot.docs[0].data(), snapshot.docs[0].id);
+  }
+
+  async countTodayRedemptionsInTxn({ userId, now, txn = null }) {
+    const startOfDay = new Date(now);
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date(now);
+    endOfDay.setUTCHours(23, 59, 59, 999);
+    const query = this.collection
+      .where('userId', '==', userId)
+      .where('redeemedAt', '>=', startOfDay)
+      .where('redeemedAt', '<=', endOfDay);
+    const snapshot = txn ? await txn.get(query) : await query.get();
+    return snapshot.size;
+  }
+
+  async findByCode({ code, txn = null }) {
+    const query = this.collection.where('redemptionCode', '==', code).limit(1);
+    const snapshot = txn ? await txn.get(query) : await query.get();
+    return snapshot.empty ? null : redemptionFromData(snapshot.docs[0].data(), snapshot.docs[0].id);
+  }
 }
