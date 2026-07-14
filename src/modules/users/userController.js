@@ -20,8 +20,8 @@ export function createUserController({ getUserService, config }) {
       const { page, pageSize } = parsePagination(req.query);
       const scope = String(req.query.scope ?? '').toLowerCase();
       const period = String(req.query.period ?? '').toLowerCase();
-      if (!new Set(['local', 'national']).has(scope)) {
-        throw validationError("Query param 'scope' must be 'local' or 'national'.");
+      if (!new Set(['local', 'national', 'worldwide']).has(scope)) {
+        throw validationError("Query param 'scope' must be 'local', 'national', or 'worldwide'.");
       }
       if (!new Set(['weekly', 'monthly', 'all_time']).has(period)) {
         throw validationError("Query param 'period' must be 'weekly', 'monthly', or 'all_time'.");
@@ -126,7 +126,18 @@ export function createUserController({ getUserService, config }) {
       res.json(successResponse(await (await service()).getStreak({ accessToken: requireBearerToken(req) })));
     },
     async getRanks(req, res) {
-      res.json(successResponse(await (await service()).getRanks({ accessToken: requireBearerToken(req) })));
+      const scopeRaw = req.query.scope == null ? null : String(req.query.scope).toLowerCase();
+      let scope = null;
+      if (scopeRaw != null && scopeRaw !== '' && scopeRaw !== 'all') {
+        if (!new Set(['local', 'national', 'worldwide']).has(scopeRaw)) {
+          throw validationError("Query param 'scope' must be 'local', 'national', or 'worldwide'.");
+        }
+        scope = scopeRaw;
+      }
+      res.json(successResponse(await (await service()).getRanks({
+        accessToken: requireBearerToken(req),
+        scope,
+      })));
     },
     async uploadProfileImage(req, res) {
       const data = await (await service()).uploadProfileImage({

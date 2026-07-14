@@ -1,34 +1,47 @@
 import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/authorization.js';
 import { buildPaginationMeta } from '../../shared/pagination.js';
 import { isEarningSourceType } from './rankingPolicy.js';
+import { isUserActiveForRanking, INACTIVITY_CONFIG_DEFAULTS } from './inactivityPolicy.js';
 
 export class LeaderboardService {
-  constructor({ userRepository, identityProvider, xpRepository, pointsRepository }) {
+  constructor({
+    userRepository,
+    identityProvider,
+    xpRepository,
+    pointsRepository,
+    inactivityConfig = INACTIVITY_CONFIG_DEFAULTS,
+  }) {
     this.userRepository = userRepository;
     this.identityProvider = identityProvider;
     this.xpRepository = xpRepository;
     this.pointsRepository = pointsRepository;
+    this.inactivityConfig = inactivityConfig;
   }
 
-  async getMyRanks({ accessToken }) {
+  async getMyRanks({ accessToken, scope }) {
     const user = await this.getCurrentUser(accessToken);
+    const requestedScope = scope ?? null;
     const cityRank = await this.rankForUser(user.uid, { city: user.city ?? null });
     const nationalRank = await this.rankForUser(user.uid, { country: user.country ?? null });
+    const worldwideRank = requestedScope === 'worldwide' || requestedScope === 'all'
+      ? await this.rankForUser(user.uid, {})
+      : null;
     return {
       city: user.city,
       country: user.country,
+      scope: requestedScope ?? 'all',
       currentXp: await this.totalXp(user.uid),
       currentPoints: await this.totalPoints(user.uid),
       cityRank,
       nationalRank,
+      worldwideRank: worldwideRank ?? null,
     };
   }
 
   async listLeaderboard({ accessToken, page, pageSize, scope, period }) {
     const user = await this.getCurrentUser(accessToken);
     const since = this.periodStart(period);
-    const city = scope === 'local' ? (user.city ?? null) : null;
-    const country = scope === 'national' ? (user.country ?? null) : null;
+    const { city, country } = this.resolveScopeFilters(scope, user);
     const ordered = await this.aggregateUserXp({ since, city, country });
     const totalItems = ordered.length;
     const start = (page - 1) * pageSize;
@@ -49,6 +62,22 @@ export class LeaderboardService {
       })),
       pagination: buildPaginationMeta({ page, pageSize, totalItems }),
     };
+  }
+
+  /**
+   * Map a scope string to city/country filter arguments.
+   *   'local'     -> city = user.city (filtered to one city)
+   *   'national'  -> country = user.country (filtered to one country)
+   *   'worldwide' -> no city/country filter (all users)
+   */
+  resolveScopeFilters(scope, user) {
+    if (scope === 'local') {
+      return { city: user.city ?? null, country: null };
+    }
+    if (scope === 'national') {
+      return { city: null, country: user.country ?? null };
+    }
+    return { city: null, country: null };
   }
 
   async rankForUser(userId, { city = null, country = null } = {}) {
@@ -101,7 +130,14 @@ export class LeaderboardService {
       }),
     );
 
-    const activeRows = since ? rows.filter((row) => row.currentXp > 0) : rows;
+    // BR-008: rank filter is applied uniformly across all three periods
+    // (weekly / monthly / all_time). For period=weekly|monthly the service
+    // has already filtered xp_ledger rows by `since`, so `currentXp > 0`
+    // means "has earned XP inside this window". For period=all_time, no
+    // window is applied, so `currentXp > 0` means "has any earned XP at
+    // all" — which is the natural reading of "active user" for an
+    // all-time board. See inactivityPolicy.isUserActiveForRanking.
+    const activeRows = rows.filter((row) => isUserActiveForRanking(row, this.inactivityConfig));
     activeRows.sort((left, right) => {
       if (right.currentXp !== left.currentXp) return right.currentXp - left.currentXp;
       if (right.validCheckins !== left.validCheckins) return right.validCheckins - left.validCheckins;

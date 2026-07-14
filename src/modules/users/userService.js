@@ -454,8 +454,8 @@ export class UserService {
     };
   }
 
-  async getRanks({ accessToken }) {
-    return this.leaderboardService.getMyRanks({ accessToken });
+  async getRanks({ accessToken, scope }) {
+    return this.leaderboardService.getMyRanks({ accessToken, scope });
   }
 
   async getLeaderboard({ accessToken, page, pageSize, scope, period }) {

@@ -131,5 +131,12 @@ export function loadConfig() {
     initialSuperAdminPhone: process.env.INITIAL_SUPER_ADMIN_PHONE ?? '',
     initialSuperAdminEmail: process.env.INITIAL_SUPER_ADMIN_EMAIL ?? '',
     initialSuperAdminPassword: process.env.INITIAL_SUPER_ADMIN_PASSWORD ?? '',
+    // BR-008: Inactive-user policy. MVP defaults: rank filter ON, points
+    // never expire. See src/modules/leaderboard/inactivityPolicy.js.
+    rankFilterEnabled: parseBoolean(process.env.RANK_FILTER_ENABLED, true),
+    pointsExpiryDays:
+      process.env.POINTS_EXPIRY_DAYS && Number(process.env.POINTS_EXPIRY_DAYS) > 0
+        ? Number(process.env.POINTS_EXPIRY_DAYS)
+        : null,
   };
 }

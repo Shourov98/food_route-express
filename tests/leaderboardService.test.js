@@ -8,6 +8,13 @@ import {
   isEarningSourceType,
   RANKING_DESCRIPTION,
 } from '../src/modules/leaderboard/rankingPolicy.js';
+import {
+  INACTIVITY_CONFIG_DEFAULTS,
+  INACTIVITY_DESCRIPTION,
+  isUserActiveForRanking,
+  loadInactivityConfig,
+  shouldExpirePoints,
+} from '../src/modules/leaderboard/inactivityPolicy.js';
 
 class FakeUserRepository {
   constructor(users = []) {
@@ -618,4 +625,356 @@ test('listLeaderboard returns paginated rows with correct rank numbers', async (
   assert.equal(result.pagination.totalItems, 3);
   assert.equal(result.pagination.pageSize, 2);
   assert.equal(result.pagination.page, 1);
+});
+
+// ---------------------------------------------------------------------------
+// BR-008 — inactivityPolicy module
+// ---------------------------------------------------------------------------
+
+test('inactivityPolicy INACTIVITY_CONFIG_DEFAULTS: rank filter ON, points never expire', () => {
+  assert.equal(INACTIVITY_CONFIG_DEFAULTS.rankFilterEnabled, true);
+  assert.equal(INACTIVITY_CONFIG_DEFAULTS.pointsExpiryDays, null);
+});
+
+test('inactivityPolicy INACTIVITY_DESCRIPTION documents the BR-008 contract', () => {
+  assert.match(INACTIVITY_DESCRIPTION, /BR-008/);
+  assert.match(INACTIVITY_DESCRIPTION, /do not expire/i);
+  assert.match(INACTIVITY_DESCRIPTION, /active rankings/i);
+});
+
+test('inactivityPolicy isUserActiveForRanking returns true only when currentXp > 0', () => {
+  assert.equal(isUserActiveForRanking({ currentXp: 100, currentPoints: 0 }), true);
+  assert.equal(isUserActiveForRanking({ currentXp: 1, currentPoints: 0 }), true);
+  assert.equal(isUserActiveForRanking({ currentXp: 0, currentPoints: 999 }), false,
+    'wallet points do not count as activity');
+  assert.equal(isUserActiveForRanking({ currentXp: 0, currentPoints: 0 }), false);
+  assert.equal(isUserActiveForRanking(null), false);
+  assert.equal(isUserActiveForRanking(undefined), false);
+  assert.equal(isUserActiveForRanking({}), false);
+});
+
+test('inactivityPolicy isUserActiveForRanking respects rankFilterEnabled=false', () => {
+  assert.equal(
+    isUserActiveForRanking({ currentXp: 0, currentPoints: 0 }, { rankFilterEnabled: false }),
+    true,
+    'when the filter is disabled, every user is active',
+  );
+});
+
+test('inactivityPolicy loadInactivityConfig defaults to MVP behaviour', () => {
+  const cfg = loadInactivityConfig({});
+  assert.equal(cfg.rankFilterEnabled, true);
+  assert.equal(cfg.pointsExpiryDays, null);
+});
+
+test('inactivityPolicy loadInactivityConfig honours env overrides', () => {
+  const cfg = loadInactivityConfig({
+    RANK_FILTER_ENABLED: 'false',
+    POINTS_EXPIRY_DAYS: '90',
+  });
+  assert.equal(cfg.rankFilterEnabled, false);
+  assert.equal(cfg.pointsExpiryDays, 90);
+});
+
+test('inactivityPolicy loadInactivityConfig rejects non-positive expiry days', () => {
+  assert.equal(loadInactivityConfig({ POINTS_EXPIRY_DAYS: '0' }).pointsExpiryDays, null);
+  assert.equal(loadInactivityConfig({ POINTS_EXPIRY_DAYS: '-5' }).pointsExpiryDays, null);
+  assert.equal(loadInactivityConfig({ POINTS_EXPIRY_DAYS: 'not-a-number' }).pointsExpiryDays, null);
+});
+
+test('inactivityPolicy shouldExpirePoints is always false in MVP (pointsExpiryDays=null)', () => {
+  const ancientActivity = new Date('2020-01-01T00:00:00.000Z');
+  assert.equal(shouldExpirePoints(ancientActivity), false,
+    'MVP never expires points regardless of how old the activity is');
+  assert.equal(shouldExpirePoints(null), false);
+  assert.equal(shouldExpirePoints(undefined), false);
+});
+
+test('inactivityPolicy shouldExpirePoints future-facing helper honours configured window', () => {
+  const cfg = { pointsExpiryDays: 30 };
+  const recent = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000); // 5 days ago
+  const stale = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000); // 60 days ago
+  assert.equal(shouldExpirePoints(recent, cfg), false);
+  assert.equal(shouldExpirePoints(stale, cfg), true);
+  assert.equal(shouldExpirePoints(null, cfg), true);
+});
+
+// ---------------------------------------------------------------------------
+// BR-008 — aggregateUserXp applies the activity filter uniformly
+// ---------------------------------------------------------------------------
+
+test('BR-008 weekly ranking excludes users whose only activity was 8+ days ago', async () => {
+  // Compute the deterministic cutoff used by periodStart('weekly') for a
+  // fixed "now" so we can construct an activity record that is outside
+  // the window without depending on real time.
+  const fixedNow = new Date('2026-07-15T10:30:00.000Z'); // Wednesday
+  const cutoff = (() => {
+    const d = new Date(fixedNow);
+    const day = d.getUTCDay();
+    const offset = day === 0 ? 6 : day - 1;
+    d.setUTCDate(d.getUTCDate() - offset);
+    d.setUTCHours(0, 0, 0, 0);
+    return d; // Monday 2026-07-13
+  })();
+  const eightDaysAgo = new Date(cutoff.getTime() - 8 * 24 * 60 * 60 * 1000);
+
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      // Alice scored inside the weekly window.
+      xpRecord({
+        userId: 'user-1',
+        sourceType: 'check_in',
+        xpDelta: 100,
+        createdAt: new Date(cutoff.getTime() + 2 * 60 * 60 * 1000), // 2h after Monday 00:00
+      }),
+      // Bob's last activity is 8 days before the cutoff — outside the week.
+      xpRecord({
+        userId: 'user-2',
+        sourceType: 'check_in',
+        xpDelta: 500,
+        createdAt: eightDaysAgo,
+        sourceId: 'u2-stale',
+      }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  // Inline the period-cutoff logic so we can avoid stubbing Date.now().
+  const weeklyCutoff = cutoff;
+  const rows = await service.aggregateUserXp({ since: weeklyCutoff });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].user.uid, 'user-1');
+  assert.equal(rows[0].currentXp, 100);
+});
+
+test('BR-008 monthly ranking excludes users whose only activity was 60+ days ago', async () => {
+  const fixedNow = new Date('2026-07-15T10:30:00.000Z');
+  const monthStart = new Date(Date.UTC(fixedNow.getUTCFullYear(), fixedNow.getUTCMonth(), 1));
+  const sixtyDaysBefore = new Date(monthStart.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({
+        userId: 'user-1',
+        sourceType: 'check_in',
+        xpDelta: 100,
+        createdAt: new Date(monthStart.getTime() + 60 * 60 * 1000),
+      }),
+      xpRecord({
+        userId: 'user-2',
+        sourceType: 'check_in',
+        xpDelta: 999,
+        createdAt: sixtyDaysBefore,
+        sourceId: 'u2-stale',
+      }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const rows = await service.aggregateUserXp({ since: monthStart });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].user.uid, 'user-1');
+});
+
+test('BR-008 weekly ranking includes a user with a check-in from yesterday', async () => {
+  // For any fixed "now" in the middle of a week, yesterday's activity
+  // must always be inside the weekly window.
+  const fixedNow = new Date('2026-07-15T10:30:00.000Z'); // Wednesday
+  const yesterday = new Date(fixedNow.getTime() - 24 * 60 * 60 * 1000);
+  const cutoff = (() => {
+    const d = new Date(fixedNow);
+    const day = d.getUTCDay();
+    const offset = day === 0 ? 6 : day - 1;
+    d.setUTCDate(d.getUTCDate() - offset);
+    d.setUTCHours(0, 0, 0, 0);
+    return d;
+  })();
+  assert.ok(yesterday >= cutoff, 'yesterday must be on/after Monday cutoff');
+
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([makeUser({ uid: 'user-1', fullname: 'Alice' })]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 50, createdAt: yesterday }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const rows = await service.aggregateUserXp({ since: cutoff });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].currentXp, 50);
+});
+
+test('BR-008 all_time ranking excludes a user with zero earned XP (signup_bonus only)', async () => {
+  // user-1 has 100 earned XP. user-2 has only a signup_bonus which lives in
+  // points_ledger and never appears in xp_ledger. all_time must drop user-2.
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100 }),
+      // user-2 has no xp_ledger rows at all.
+    ]),
+    pointsRepository: new FakePointsRepository([
+      pointsRecord({ userId: 'user-2', sourceType: 'signup_bonus', pointsDelta: 50 }),
+    ]),
+  });
+
+  const rows = await service.aggregateUserXp(); // since=null -> all_time
+  assert.equal(rows.length, 1, 'zero-earned-XP users must be excluded from all_time');
+  assert.equal(rows[0].user.uid, 'user-1');
+});
+
+test('BR-008 all_time ranking includes a user with at least one earning record, even if old', async () => {
+  const veryOld = new Date('2025-01-01T00:00:00.000Z');
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([makeUser({ uid: 'user-1', fullname: 'Alice' })]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100, createdAt: veryOld }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const rows = await service.aggregateUserXp();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].currentXp, 100);
+});
+
+test('BR-008 rankFilterEnabled=false makes the leaderboard include every user', async () => {
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100 }),
+      // user-2 has no earned XP — would normally be dropped.
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+    inactivityConfig: { rankFilterEnabled: false, pointsExpiryDays: null },
+  });
+
+  const rows = await service.aggregateUserXp();
+  assert.equal(rows.length, 2, 'when rankFilterEnabled=false, both users appear');
+});
+
+test('BR-008 listLeaderboard honours rank filter for period=all_time', async () => {
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Dhaka', country: 'Bangladesh' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 200 }),
+    ]),
+    pointsRepository: new FakePointsRepository([
+      pointsRecord({ userId: 'user-2', sourceType: 'signup_bonus', pointsDelta: 50 }),
+    ]),
+  });
+
+  const result = await service.listLeaderboard({
+    accessToken: 'token',
+    page: 1,
+    pageSize: 10,
+    scope: 'worldwide',
+    period: 'all_time',
+  });
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].userId, 'user-1');
+});
+
+// ---------------------------------------------------------------------------
+// BR-008 — getMyRanks with scope=worldwide
+// ---------------------------------------------------------------------------
+
+test('BR-008 getMyRanks with scope omitted returns cityRank + nationalRank (backward compat)', async () => {
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Chittagong', country: 'Bangladesh' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100 }),
+      xpRecord({ userId: 'user-2', sourceType: 'check_in', xpDelta: 200, sourceId: 'u2-c1' }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const ranks = await service.getMyRanks({ accessToken: 'token' });
+  assert.equal(ranks.city, 'Dhaka');
+  assert.equal(ranks.country, 'Bangladesh');
+  assert.equal(ranks.cityRank, 1, 'only user in Dhaka');
+  assert.equal(ranks.nationalRank, 2, 'second-highest in Bangladesh');
+  assert.equal(ranks.worldwideRank, null, 'worldwide rank not requested');
+});
+
+test('BR-008 getMyRanks with scope=worldwide returns worldwideRank', async () => {
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Chittagong', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-3', fullname: 'Carol', city: 'Singapore', country: 'Singapore' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100 }),
+      xpRecord({ userId: 'user-2', sourceType: 'check_in', xpDelta: 300, sourceId: 'u2-c1' }),
+      xpRecord({ userId: 'user-3', sourceType: 'check_in', xpDelta: 200, sourceId: 'u3-c1' }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const ranks = await service.getMyRanks({ accessToken: 'token', scope: 'worldwide' });
+  assert.equal(ranks.scope, 'worldwide');
+  assert.equal(ranks.worldwideRank, 3, 'user-1 is rank 3 globally');
+  assert.equal(ranks.cityRank, 1);
+  assert.equal(ranks.nationalRank, 2, '2 Bangladesh users, user-1 is rank 2');
+});
+
+test('BR-008 listLeaderboard with scope=worldwide returns global ranks', async () => {
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Chittagong', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-3', fullname: 'Carol', city: 'Singapore', country: 'Singapore' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100 }),
+      xpRecord({ userId: 'user-2', sourceType: 'check_in', xpDelta: 300, sourceId: 'u2-c1' }),
+      xpRecord({ userId: 'user-3', sourceType: 'check_in', xpDelta: 200, sourceId: 'u3-c1' }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const result = await service.listLeaderboard({
+    accessToken: 'token',
+    page: 1,
+    pageSize: 10,
+    scope: 'worldwide',
+    period: 'all_time',
+  });
+  assert.equal(result.scope, 'worldwide');
+  assert.equal(result.items.length, 3);
+  assert.equal(result.items[0].userId, 'user-2', 'highest XP first');
+  assert.equal(result.items[0].rank, 1);
+  assert.equal(result.items[1].userId, 'user-3');
+  assert.equal(result.items[2].userId, 'user-1');
 });

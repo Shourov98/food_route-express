@@ -15,6 +15,7 @@ import {
 import { FirestoreLevelRepository } from '../levels/levelRepository.js';
 import { FirestorePointsLedgerRepository, FirestoreXpLedgerRepository } from '../xp/xpRepository.js';
 import { XpService } from '../xp/xpService.js';
+import { loadInactivityConfig } from '../leaderboard/inactivityPolicy.js';
 import { UserService } from './userService.js';
 
 let cachedServicePromise;
@@ -57,6 +58,10 @@ export function getUserService(config) {
           identityProvider,
           xpRepository,
           pointsRepository,
+          inactivityConfig: loadInactivityConfig({
+            RANK_FILTER_ENABLED: process.env.RANK_FILTER_ENABLED,
+            POINTS_EXPIRY_DAYS: process.env.POINTS_EXPIRY_DAYS,
+          }),
         }),
       });
     });
