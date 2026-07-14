@@ -67,7 +67,6 @@ function hasLocation(latitude, longitude) {
 function supportsFeature(record, featureKey) {
   const matrix = {
     featuredListing: new Set(['pro', 'prime', 'dominio']),
-    proximityAlerts: new Set(['prime', 'dominio']),
   };
   return Boolean(record.currentPackage && matrix[featureKey]?.has(record.currentPackage));
 }
@@ -342,8 +341,7 @@ export class RestaurantDiscoveryService {
     let records = (await this.restaurantRepository.listAll()).filter(
       (record) =>
         record.status === 'active' &&
-        isActiveCity(record.city, this.geographyConfig) &&
-        supportsFeature(record, 'proximityAlerts'),
+        isActiveCity(record.city, this.geographyConfig),
     );
     records = this.filterRestaurants(records, { search, city: effectiveCity });
     const placementBoosts = await buildPlacementBoosts(

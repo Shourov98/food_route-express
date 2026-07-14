@@ -16,6 +16,9 @@ function receiptUploadResponse(record) {
     restaurantId: record.restaurantId,
     restaurantName: record.restaurantName,
     receiptImageUrl: record.receiptImageUrl,
+    imageUrl: record.receiptImageUrl,
+    note: record.note ?? '',
+    status: record.status ?? 'Pending',
     awardedXp: record.awardedXp,
     awardedPoints: record.awardedPoints,
     createdAt: record.createdAt,
@@ -48,7 +51,7 @@ export class ReceiptUploadService {
     this.nowProvider = nowProvider;
   }
 
-  async uploadReceipt({ accessToken, restaurantId, image }) {
+  async uploadReceipt({ accessToken, restaurantId, image, note = '' }) {
     let user = await getAuthenticatedAccount({
       accessToken,
       identityProvider: this.identityProvider,
@@ -139,6 +142,8 @@ export class ReceiptUploadService {
       restaurantName: restaurant.name,
       receiptImageUrl: stored.publicUrl,
       receiptStoragePath: stored.storagePath,
+      note: String(note ?? '').slice(0, 500),
+      status: 'Pending',
       awardedXp,
       awardedPoints: awardedXp,
       createdAt: now,

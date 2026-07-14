@@ -22,6 +22,8 @@ function receiptUploadFromData(data) {
     restaurantName: data.restaurantName ?? '',
     receiptImageUrl: data.receiptImageUrl ?? null,
     receiptStoragePath: data.receiptStoragePath ?? null,
+    note: typeof data.note === 'string' ? data.note : '',
+    status: typeof data.status === 'string' ? data.status : 'Pending',
     awardedXp: Number(data.awardedXp ?? 0),
     awardedPoints: Number(data.awardedPoints ?? 0),
     createdAt: toDate(data.createdAt),

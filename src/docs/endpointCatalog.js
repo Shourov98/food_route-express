@@ -620,6 +620,7 @@ export const endpointCatalog = {
       required: ['image'],
       properties: {
         image: binaryProperty('Receipt image upload.'),
+        note: stringProperty('Optional note associated with the receipt.'),
       },
     }),
   },

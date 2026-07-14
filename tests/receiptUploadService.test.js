@@ -241,11 +241,15 @@ test('ReceiptUploadService uploads a receipt and awards restaurant-configured XP
     accessToken: 'user-1',
     restaurantId: 'restaurant-1',
     image: { originalname: 'receipt.png', mimetype: 'image/png', buffer: Buffer.from('x') },
+    note: 'Lunch receipt',
   });
 
   assert.equal(result.data.restaurantId, 'restaurant-1');
   assert.equal(result.data.awardedXp, 40);
   assert.equal(result.data.awardedPoints, 40);
+  assert.equal(result.data.note, 'Lunch receipt');
+  assert.equal(result.data.status, 'Pending');
+  assert.equal(result.data.imageUrl, result.data.receiptImageUrl);
   assert.equal(result.message, 'Receipt uploaded successfully.');
   assert.equal(xpRepository.records.length, 1);
   assert.equal(pointsRepository.records.length, 1);

@@ -462,6 +462,30 @@ test('BR-011 parseRadius rejects non-numeric radius', async () => {
   );
 });
 
+test('BR-011 listNearbyRestaurants returns all active-city restaurants regardless of package tier', async () => {
+  // Restaurants on the lower-tier packages (start, active, pro) should appear
+  // in the nearby feed. Only the active status + active-city allowlist apply.
+  const start = makeRestaurant('start', { currentPackage: 'start' });
+  const active = makeRestaurant('active', { currentPackage: 'active' });
+  const pro = makeRestaurant('pro', { currentPackage: 'pro' });
+  const prime = makeRestaurant('prime', { currentPackage: 'prime' });
+  const dominio = makeRestaurant('dominio', { currentPackage: 'dominio' });
+  const service = createService([start, active, pro, prime, dominio], makeUser());
+
+  const result = await service.listNearbyRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: null,
+    latitude: 19.4326,
+    longitude: -99.1332,
+  });
+
+  const ids = result.items.map((item) => item.id).sort();
+  assert.deepEqual(ids, ['active', 'dominio', 'prime', 'pro', 'start']);
+});
+
 // ---------------------------------------------------------------------------
 // BR-012 — getDirections providers + getRestaurantMenu lat/lng
 // ---------------------------------------------------------------------------
