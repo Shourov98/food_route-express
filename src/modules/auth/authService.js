@@ -310,6 +310,34 @@ export class AuthService {
     return verifyOtpResponseData(payload.email, true);
   }
 
+  async resetPasswordAfterOtp(payload) {
+    if (this.config.authPasswordResetMode === 'email_link') {
+      throw new ApplicationError({
+        code: 'password_reset_mode_email_link',
+        message:
+          'Password-reset email links are enabled. Complete the reset from the email link instead of the OTP endpoint.',
+        statusCode: 400,
+      });
+    }
+    const user = await this.getUserOrRaise(payload.email);
+    this.ensureUserCanAuthenticate(user);
+    const latestOtp = await this.otpRepository.getLatestActive(
+      payload.email,
+      OTP_PURPOSE.FORGOT_PASSWORD,
+    );
+    if (!latestOtp || !latestOtp.consumedAt) {
+      throw new ApplicationError({
+        code: 'otp_not_verified',
+        message: 'You must verify the forgot-password OTP before resetting your password.',
+        statusCode: 400,
+      });
+    }
+    await this.identityProvider.updatePassword({
+      uid: user.uid,
+      password: payload.new_password,
+    });
+  }
+
   async sendVerificationEmail(email) {
     const user = await this.getUserOrRaise(email);
     if (user.isVerified) {

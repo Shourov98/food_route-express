@@ -115,3 +115,11 @@ export function validateChangePassword(body) {
     new_password: requiredString(body, 'new_password', { min: 8, max: 128 }),
   };
 }
+
+export function validateResetPassword(body) {
+  assertObject(body);
+  return {
+    email: requiredEmail(body),
+    new_password: requiredString(body, 'new_password', { min: 8, max: 128 }),
+  };
+}

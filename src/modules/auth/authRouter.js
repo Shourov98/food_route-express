@@ -20,6 +20,7 @@ export function createAuthRouter(config) {
   router.post('/send-password-reset-email', asyncHandler(controller.sendPasswordResetEmail));
   router.post('/verify-forgot-otp', asyncHandler(controller.verifyForgotOtp));
   router.post('/change-password', asyncHandler(controller.changePassword));
+  router.post('/reset-password', asyncHandler(controller.resetPassword));
 
   return router;
 }

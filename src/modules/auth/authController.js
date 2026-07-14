@@ -9,6 +9,7 @@ import {
   validateReferralRegister,
   validateRefresh,
   validateRegister,
+  validateResetPassword,
 } from './authValidators.js';
 
 function requireBearerToken(req) {
@@ -112,6 +113,13 @@ export function createAuthController({ getAuthService, config }) {
       const authService = await service();
       await authService.changePassword(token, payload);
       res.json(messageResponse('Password changed successfully.'));
+    },
+
+    async resetPassword(req, res) {
+      const payload = validateResetPassword(req.body);
+      const authService = await service();
+      await authService.resetPasswordAfterOtp(payload);
+      res.json(messageResponse('Password has been reset successfully.'));
     },
   };
 }

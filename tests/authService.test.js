@@ -250,6 +250,59 @@ test('AuthService forgotPassword is generic for missing emails', async () => {
   assert.equal(emailService.otps.length, 0);
 });
 
+test('AuthService resetPasswordAfterOtp updates a verified user password after OTP verification', async () => {
+  const { service, userRepository, otpRepository, identityProvider } = createService();
+  const user = {
+    uid: 'user-1',
+    email: 'jane@example.com',
+    fullname: 'Jane Doe',
+    role: 'user',
+    isBlocked: false,
+    isVerified: true,
+  };
+  await userRepository.create(user);
+  const passwordUpdates = [];
+  identityProvider.updatePassword = async (payload) => {
+    passwordUpdates.push(payload);
+  };
+  await otpRepository.save({
+    documentId: 'otp-1',
+    email: user.email,
+    purpose: 'forgot_password',
+    consumedAt: new Date(),
+    createdAt: new Date(),
+  });
+
+  await service.resetPasswordAfterOtp({
+    email: user.email,
+    new_password: 'NewPassword123',
+  });
+
+  assert.deepEqual(passwordUpdates, [
+    { uid: user.uid, password: 'NewPassword123' },
+  ]);
+});
+
+test('AuthService resetPasswordAfterOtp rejects an unverified OTP', async () => {
+  const { service, userRepository } = createService();
+  await userRepository.create({
+    uid: 'user-1',
+    email: 'jane@example.com',
+    fullname: 'Jane Doe',
+    role: 'user',
+    isBlocked: false,
+    isVerified: true,
+  });
+
+  await assert.rejects(
+    service.resetPasswordAfterOtp({
+      email: 'jane@example.com',
+      new_password: 'NewPassword123',
+    }),
+    (error) => error.code === 'otp_not_verified',
+  );
+});
+
 test('AuthService login rejects unverified users with matching code', async () => {
   const { service } = createService();
   await service.register({
