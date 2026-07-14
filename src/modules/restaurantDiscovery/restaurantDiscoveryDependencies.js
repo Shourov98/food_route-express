@@ -3,6 +3,7 @@ import { FirebaseIdentityProvider } from '../../infra/identityProvider.js';
 import { FirestoreUserRepository } from '../auth/authRepository.js';
 import { FirestoreFavoriteRepository } from '../favorites/favoriteRepository.js';
 import { FirestoreMenuItemRepository, FirestoreMenuRepository } from '../menus/menuRepository.js';
+import { FirestorePlacementRepository } from '../placements/placementRepository.js';
 import { FirestoreRestaurantRepository } from '../restaurants/restaurantRepository.js';
 import { FirestoreReviewRepository } from '../reviews/reviewRepository.js';
 import { loadGeographyConfig } from '../geography/geographyPolicy.js';
@@ -26,6 +27,7 @@ export function getRestaurantDiscoveryService(config) {
           DEFAULT_PROXIMITY_RADIUS_KM: process.env.DEFAULT_PROXIMITY_RADIUS_KM,
           SECONDARY_PROXIMITY_RADIUS_KM: process.env.SECONDARY_PROXIMITY_RADIUS_KM,
         }),
+        placementRepository: new FirestorePlacementRepository(firestore),
       });
     });
   }

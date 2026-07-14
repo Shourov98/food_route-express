@@ -8,7 +8,14 @@ import {
   outOfServiceMessage,
   resolveRadiusKm,
   resolveSecondaryRadiusKm,
+  SECONDARY_RADIUS_MULTIPLIER,
+  SECONDARY_PROXIMITY_RADIUS_KM,
 } from '../geography/geographyPolicy.js';
+import {
+  DEFAULT_PLATFORM,
+  buildMapsUrls,
+  parsePlatform,
+} from '../navigation/navigationPolicy.js';
 
 function normalizeCity(value) {
   return String(value ?? '').trim().toLowerCase();
@@ -108,6 +115,67 @@ function menuItemData(item) {
   };
 }
 
+// BR-011 — placement boost tiers. Lower numbers sort first within the
+// primary band. `none` is the default for unplaced restaurants.
+const PLACEMENT_TIERS = Object.freeze({
+  sponsored: 0,
+  featured: 1,
+  trending: 2,
+  none: 3,
+});
+
+function placementTierFor(item, placementBoosts) {
+  if (!placementBoosts) return PLACEMENT_TIERS.none;
+  for (const feature of ['sponsored', 'featured', 'trending']) {
+    const boost = placementBoosts.get(feature);
+    if (boost?.has(item.id)) {
+      return PLACEMENT_TIERS[feature];
+    }
+  }
+  return PLACEMENT_TIERS.none;
+}
+
+/**
+ * BR-011 — Build the placement boost map. Returns `null` when the
+ * placement repository is unavailable (no Firestore wiring), letting
+ * `buildListResponse` fall back to the closest-first sort.
+ *
+ * The shape is `Map<feature, Map<restaurantId, { sortOrder }>>` —
+ * feature names use the canonical placement feature strings.
+ */
+async function buildPlacementBoosts(placementRepository, restaurantIds) {
+  if (!placementRepository) return null;
+  const features = ['sponsored', 'featured', 'trending'];
+  const sets = await Promise.all(
+    features.map(async (feature) => {
+      const records = await placementRepository.listByFeature(feature);
+      const ids = new Set();
+      for (const record of records) {
+        if (record.active && restaurantIds.has(record.restaurantId)) {
+          ids.add(record.restaurantId);
+        }
+      }
+      return [feature, ids];
+    }),
+  );
+  return new Map(sets);
+}
+
+function resolveEffectiveRadii({ user, geographyConfig, radiusKm }) {
+  if (Number.isFinite(radiusKm) && radiusKm > 0) {
+    const widened = Math.max(
+      radiusKm * SECONDARY_RADIUS_MULTIPLIER,
+      geographyConfig?.secondaryRadiusKm ?? SECONDARY_PROXIMITY_RADIUS_KM,
+    );
+    return { primaryRadiusKm: radiusKm, secondaryRadiusKm: widened, source: 'query' };
+  }
+  return {
+    primaryRadiusKm: resolveRadiusKm(user, geographyConfig),
+    secondaryRadiusKm: resolveSecondaryRadiusKm(user, geographyConfig),
+    source: 'user',
+  };
+}
+
 export class RestaurantDiscoveryService {
   constructor({
     restaurantRepository,
@@ -118,6 +186,7 @@ export class RestaurantDiscoveryService {
     userRepository,
     identityProvider,
     geographyConfig = loadGeographyConfig(),
+    placementRepository = null,
   }) {
     this.restaurantRepository = restaurantRepository;
     this.menuRepository = menuRepository;
@@ -127,6 +196,7 @@ export class RestaurantDiscoveryService {
     this.userRepository = userRepository;
     this.identityProvider = identityProvider;
     this.geographyConfig = geographyConfig;
+    this.placementRepository = placementRepository;
   }
 
   parseLocation(query) {
@@ -134,6 +204,18 @@ export class RestaurantDiscoveryService {
       latitude: parseNumber(query.latitude),
       longitude: parseNumber(query.longitude),
     };
+  }
+
+  /**
+   * Parse an optional `?radius=` (km) override. Returns `null` when
+   * missing; rejects non-finite numeric values via `validationError`.
+   * Negative or zero values fall back to the user's default radius.
+   */
+  parseRadius(query) {
+    if (query?.radius === undefined || query?.radius === null || query?.radius === '') {
+      return null;
+    }
+    return parseNumber(query.radius);
   }
 
   /**
@@ -176,7 +258,7 @@ export class RestaurantDiscoveryService {
     }
   }
 
-  async listRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude }) {
+  async listRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude, radiusKm }) {
     const user = await this.getCurrentUser(accessToken);
     this.enforceManualCity({ city, latitude, longitude, user });
     const favoriteIds = await this.favoriteIds(user.uid);
@@ -184,6 +266,15 @@ export class RestaurantDiscoveryService {
       (record) => record.status === 'active' && isActiveCity(record.city, this.geographyConfig),
     );
     records = this.filterRestaurants(records, { search, city });
+    const placementBoosts = await buildPlacementBoosts(
+      this.placementRepository,
+      new Set(records.map((record) => record.id)),
+    );
+    const { primaryRadiusKm, secondaryRadiusKm } = resolveEffectiveRadii({
+      user,
+      geographyConfig: this.geographyConfig,
+      radiusKm,
+    });
     return this.buildListResponse({
       records,
       page,
@@ -191,12 +282,13 @@ export class RestaurantDiscoveryService {
       latitude,
       longitude,
       favoriteIds,
-      primaryRadiusKm: resolveRadiusKm(user, this.geographyConfig),
-      secondaryRadiusKm: resolveSecondaryRadiusKm(user, this.geographyConfig),
+      primaryRadiusKm,
+      secondaryRadiusKm,
+      placementBoosts,
     });
   }
 
-  async listFeaturedRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude }) {
+  async listFeaturedRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude, radiusKm }) {
     const user = await this.getCurrentUser(accessToken);
     this.enforceManualCity({ city, latitude, longitude, user });
     const favoriteIds = await this.favoriteIds(user.uid);
@@ -207,6 +299,15 @@ export class RestaurantDiscoveryService {
         supportsFeature(record, 'featuredListing'),
     );
     records = this.filterRestaurants(records, { search, city });
+    const placementBoosts = await buildPlacementBoosts(
+      this.placementRepository,
+      new Set(records.map((record) => record.id)),
+    );
+    const { primaryRadiusKm, secondaryRadiusKm } = resolveEffectiveRadii({
+      user,
+      geographyConfig: this.geographyConfig,
+      radiusKm,
+    });
     return this.buildListResponse({
       records,
       page,
@@ -214,12 +315,13 @@ export class RestaurantDiscoveryService {
       latitude,
       longitude,
       favoriteIds,
-      primaryRadiusKm: resolveRadiusKm(user, this.geographyConfig),
-      secondaryRadiusKm: resolveSecondaryRadiusKm(user, this.geographyConfig),
+      primaryRadiusKm,
+      secondaryRadiusKm,
+      placementBoosts,
     });
   }
 
-  async listNearbyRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude }) {
+  async listNearbyRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude, radiusKm }) {
     const user = await this.getCurrentUser(accessToken);
     // Don't enforce a hard error here: the lat/lng-based "nearby" flow is
     // a probe and the soft serviceArea flag is more useful. We still
@@ -244,6 +346,15 @@ export class RestaurantDiscoveryService {
         supportsFeature(record, 'proximityAlerts'),
     );
     records = this.filterRestaurants(records, { search, city: effectiveCity });
+    const placementBoosts = await buildPlacementBoosts(
+      this.placementRepository,
+      new Set(records.map((record) => record.id)),
+    );
+    const { primaryRadiusKm, secondaryRadiusKm } = resolveEffectiveRadii({
+      user,
+      geographyConfig: this.geographyConfig,
+      radiusKm,
+    });
     return this.buildListResponse({
       records,
       page,
@@ -251,9 +362,10 @@ export class RestaurantDiscoveryService {
       latitude,
       longitude,
       favoriteIds,
-      primaryRadiusKm: resolveRadiusKm(user, this.geographyConfig),
-      secondaryRadiusKm: resolveSecondaryRadiusKm(user, this.geographyConfig),
+      primaryRadiusKm,
+      secondaryRadiusKm,
       enforceProximityBands: hasLocation(latitude, longitude),
+      placementBoosts,
     });
   }
 
@@ -296,6 +408,8 @@ export class RestaurantDiscoveryService {
       restaurantName: restaurant.name,
       restaurantAddress: restaurant.address,
       city: restaurant.city,
+      latitude: restaurant.latitude,
+      longitude: restaurant.longitude,
       category: restaurant.category,
       imageUrl: restaurant.imageUrl,
       pointsPerCheckIn: restaurant.pointsPerCheckIn,
@@ -308,12 +422,18 @@ export class RestaurantDiscoveryService {
     };
   }
 
-  async getDirections({ accessToken, restaurantId, latitude, longitude }) {
+  async getDirections({ accessToken, restaurantId, latitude, longitude, platform }) {
     await this.getCurrentUser(accessToken);
     const restaurant = await this.getActiveRestaurant(restaurantId);
     const destination = `${restaurant.latitude},${restaurant.longitude}`;
     const origin =
       latitude === null || longitude === null ? null : `${latitude},${longitude}`;
+    const normalizedPlatform = parsePlatform(platform ?? DEFAULT_PLATFORM);
+    const providers = buildMapsUrls({
+      origin,
+      destination,
+      platform: normalizedPlatform,
+    });
 
     return {
       restaurantId: restaurant.id,
@@ -324,9 +444,9 @@ export class RestaurantDiscoveryService {
       userLatitude: latitude,
       userLongitude: longitude,
       distanceKm: distanceKm(latitude, longitude, restaurant.latitude, restaurant.longitude),
-      mapsUrl: origin
-        ? `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}`
-        : `https://www.google.com/maps/search/?api=1&query=${destination}`,
+      platform: normalizedPlatform,
+      mapsUrl: providers.google.url,
+      providers,
     };
   }
 
@@ -358,6 +478,7 @@ export class RestaurantDiscoveryService {
     primaryRadiusKm,
     secondaryRadiusKm,
     enforceProximityBands = false,
+    placementBoosts = null,
   }) {
     let items = await Promise.all(
       records.map(async (record) =>
@@ -386,6 +507,13 @@ export class RestaurantDiscoveryService {
       }
     }
     items.sort((left, right) => {
+      // BR-011 — sponsored/featured/trending placements sort to the top
+      // within their band. Items without a placement get tier 3 (lowest).
+      const leftTier = placementTierFor(left, placementBoosts);
+      const rightTier = placementTierFor(right, placementBoosts);
+      if (leftTier !== rightTier) {
+        return leftTier - rightTier;
+      }
       if (left.distanceKm === null && right.distanceKm !== null) return 1;
       if (left.distanceKm !== null && right.distanceKm === null) return -1;
       if (left.distanceKm !== null && right.distanceKm !== null && left.distanceKm !== right.distanceKm) {

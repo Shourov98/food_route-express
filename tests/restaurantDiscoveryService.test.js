@@ -28,6 +28,10 @@ class FakeRestaurantRepository {
   async listAll() {
     return this.restaurants;
   }
+
+  async getById(id) {
+    return this.restaurants.find((record) => record.id === id) ?? null;
+  }
 }
 
 class FakeReviewRepository {
@@ -39,6 +43,28 @@ class FakeReviewRepository {
 class FakeFavoriteRepository {
   async listByUser() {
     return [];
+  }
+}
+
+class FakeMenuRepository {
+  async getByRestaurantId() {
+    return null;
+  }
+}
+
+class FakeMenuItemRepository {
+  async listByMenuId() {
+    return [];
+  }
+}
+
+class FakePlacementRepository {
+  constructor(byFeature = {}) {
+    this.byFeature = byFeature;
+  }
+
+  async listByFeature(feature) {
+    return this.byFeature[feature] ?? [];
   }
 }
 
@@ -72,15 +98,16 @@ function makeRestaurant(id, overrides = {}) {
   };
 }
 
-function createService(restaurants, user = makeUser()) {
+function createService(restaurants, user = makeUser(), { placementRepository = null, menuRepository = null } = {}) {
   return new RestaurantDiscoveryService({
     restaurantRepository: new FakeRestaurantRepository(restaurants),
-    menuRepository: null,
-    menuItemRepository: null,
+    menuRepository: menuRepository ?? new FakeMenuRepository(),
+    menuItemRepository: new FakeMenuItemRepository(),
     reviewRepository: new FakeReviewRepository(),
     favoriteRepository: new FakeFavoriteRepository(),
     userRepository: new FakeUserRepository([user]),
     identityProvider: new FakeIdentityProvider(),
+    placementRepository,
   });
 }
 
@@ -331,4 +358,189 @@ test('BR-010 listRestaurants response always includes activeCities in serviceAre
   });
   assert.deepEqual(result.serviceArea.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
   assert.equal(result.serviceArea.message, null, 'no message when not out of service');
+});
+
+// ---------------------------------------------------------------------------
+// BR-011 — placement boost + wide-radius filter
+// ---------------------------------------------------------------------------
+
+test('BR-011 listRestaurants boosts sponsored placement to the top within the band', async () => {
+  // "close" is closer to the user but has no placement.
+  // "sponsored" is slightly farther but has an active sponsored placement.
+  const close = makeRestaurant('close', { latitude: 19.4327, longitude: -99.1333 });
+  const sponsored = makeRestaurant('sponsored', { latitude: 19.435, longitude: -99.135 });
+  const placementRepository = new FakePlacementRepository({
+    sponsored: [{ id: 'pl-1', feature: 'sponsored', restaurantId: 'sponsored', active: true, sortOrder: 0 }],
+  });
+  const service = createService([close, sponsored], makeUser(), { placementRepository });
+
+  const result = await service.listRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: null,
+    latitude: 19.4326,
+    longitude: -99.1332,
+  });
+  assert.deepEqual(
+    result.items.map((item) => item.id),
+    ['sponsored', 'close'],
+    'sponsored restaurant sorts ahead of closer un-placed restaurant',
+  );
+});
+
+test('BR-011 listRestaurants falls back to closest-first when no placements', async () => {
+  // Same setup as above, but no placementRepository: closest should win.
+  const close = makeRestaurant('close', { latitude: 19.4327, longitude: -99.1333 });
+  const far = makeRestaurant('far', { latitude: 19.435, longitude: -99.135 });
+  const service = createService([close, far], makeUser(), { placementRepository: null });
+
+  const result = await service.listRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: null,
+    latitude: 19.4326,
+    longitude: -99.1332,
+  });
+  assert.deepEqual(result.items.map((item) => item.id), ['close', 'far']);
+});
+
+test('BR-011 listRestaurants treats inactive placements as no boost', async () => {
+  const close = makeRestaurant('close', { latitude: 19.4327, longitude: -99.1333 });
+  const far = makeRestaurant('far', { latitude: 19.435, longitude: -99.135 });
+  const placementRepository = new FakePlacementRepository({
+    sponsored: [{ id: 'pl-1', feature: 'sponsored', restaurantId: 'far', active: false, sortOrder: 0 }],
+  });
+  const service = createService([close, far], makeUser(), { placementRepository });
+
+  const result = await service.listRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: null,
+    latitude: 19.4326,
+    longitude: -99.1332,
+  });
+  assert.deepEqual(result.items.map((item) => item.id), ['close', 'far'],
+    'inactive placement must not boost the restaurant');
+});
+
+test('BR-011 listNearbyRestaurants honours ?radius= query override', async () => {
+  // "near" is 0.1 km away, "mid" is 8 km away. User has no proximityDistanceKm
+  // (so default = 5 km), but the test passes radiusKm = 12 so "mid" is in band.
+  const near = makeRestaurant('near', { latitude: 19.4326, longitude: -99.1332 });
+  const mid = makeRestaurant('mid', { latitude: 19.49, longitude: -99.19 });
+  const service = createService([near, mid], makeUser());
+
+  const result = await service.listNearbyRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: null,
+    latitude: 19.4326,
+    longitude: -99.1332,
+    radiusKm: 12,
+  });
+  assert.equal(result.serviceArea.radiusKm, 12);
+  assert.deepEqual(
+    result.items.map((item) => item.id).sort(),
+    ['mid', 'near'],
+    '12 km override should include both restaurants',
+  );
+});
+
+test('BR-011 parseRadius rejects non-numeric radius', async () => {
+  const service = createService([makeRestaurant('mexico', { city: 'Mexico City' })]);
+  assert.throws(
+    () => service.parseRadius({ radius: 'abc' }),
+    (err) => err instanceof ApplicationError && err.code === 'validation_error',
+  );
+});
+
+// ---------------------------------------------------------------------------
+// BR-012 — getDirections providers + getRestaurantMenu lat/lng
+// ---------------------------------------------------------------------------
+
+test('BR-012 getRestaurantMenu response includes latitude and longitude', async () => {
+  const service = createService([makeRestaurant('mexico', { city: 'Mexico City' })]);
+
+  const result = await service.getRestaurantMenu({
+    accessToken: 'user-1',
+    restaurantId: 'mexico',
+    latitude: 19.4,
+    longitude: -99.1,
+  });
+  assert.equal(result.latitude, 19.4326);
+  assert.equal(result.longitude, -99.1332);
+});
+
+test('BR-012 getDirections returns google + apple + waze URLs (platform=ios)', async () => {
+  const service = createService([makeRestaurant('mexico', { city: 'Mexico City' })]);
+
+  const result = await service.getDirections({
+    accessToken: 'user-1',
+    restaurantId: 'mexico',
+    latitude: 19.4,
+    longitude: -99.1,
+    platform: 'ios',
+  });
+  assert.equal(result.platform, 'ios');
+  assert.match(result.providers.google.url, /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&origin=19\.4,-99\.1&destination=19\.4326,-99\.1332$/);
+  assert.equal(result.providers.google.fallbackReason, null);
+  assert.equal(result.providers.apple.url, 'maps://?daddr=19.4326,-99.1332&dirflg=d');
+  assert.equal(result.providers.apple.fallbackReason, null);
+  assert.equal(result.providers.waze.url, 'waze://?ll=19.4326,-99.1332&navigate=yes');
+  assert.equal(result.providers.waze.fallbackReason, null);
+  // Back-compat field still present.
+  assert.equal(result.mapsUrl, result.providers.google.url);
+});
+
+test('BR-012 getDirections returns web fallback URLs with no_native_app (platform=web)', async () => {
+  const service = createService([makeRestaurant('mexico', { city: 'Mexico City' })]);
+
+  const result = await service.getDirections({
+    accessToken: 'user-1',
+    restaurantId: 'mexico',
+    latitude: 19.4,
+    longitude: -99.1,
+    platform: 'web',
+  });
+  assert.equal(result.platform, 'web');
+  assert.match(result.providers.apple.url, /^https:\/\/maps\.apple\.com\//);
+  assert.equal(result.providers.apple.fallbackReason, 'no_native_app');
+  assert.match(result.providers.waze.url, /^https:\/\/waze\.com\/ul\?/);
+  assert.equal(result.providers.waze.fallbackReason, 'no_native_app');
+  assert.equal(result.providers.google.fallbackReason, null);
+});
+
+test('BR-012 getDirections falls back to Google search URL when no origin', async () => {
+  const service = createService([makeRestaurant('mexico', { city: 'Mexico City' })]);
+
+  const result = await service.getDirections({
+    accessToken: 'user-1',
+    restaurantId: 'mexico',
+    latitude: null,
+    longitude: null,
+    platform: 'ios',
+  });
+  assert.match(result.providers.google.url, /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=19\.4326,-99\.1332$/);
+});
+
+test('BR-012 getDirections defaults platform to web', async () => {
+  const service = createService([makeRestaurant('mexico', { city: 'Mexico City' })]);
+
+  const result = await service.getDirections({
+    accessToken: 'user-1',
+    restaurantId: 'mexico',
+    latitude: 19.4,
+    longitude: -99.1,
+    platform: undefined,
+  });
+  assert.equal(result.platform, 'web');
+  assert.equal(result.providers.apple.fallbackReason, 'no_native_app');
 });

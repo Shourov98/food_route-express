@@ -12,6 +12,7 @@ export function createRestaurantDiscoveryController({ getRestaurantDiscoveryServ
       const { page, pageSize } = parsePagination(req.query);
       const discoveryService = await service();
       const { latitude, longitude } = discoveryService.parseLocation(req.query);
+      const radiusKm = discoveryService.parseRadius(req.query);
       res.json(successResponse(await discoveryService.listRestaurants({
         accessToken: requireBearerToken(req),
         page,
@@ -20,12 +21,14 @@ export function createRestaurantDiscoveryController({ getRestaurantDiscoveryServ
         city: req.query.city,
         latitude,
         longitude,
+        radiusKm,
       })));
     },
     async listFeaturedRestaurants(req, res) {
       const { page, pageSize } = parsePagination(req.query);
       const discoveryService = await service();
       const { latitude, longitude } = discoveryService.parseLocation(req.query);
+      const radiusKm = discoveryService.parseRadius(req.query);
       res.json(successResponse(await discoveryService.listFeaturedRestaurants({
         accessToken: requireBearerToken(req),
         page,
@@ -34,12 +37,14 @@ export function createRestaurantDiscoveryController({ getRestaurantDiscoveryServ
         city: req.query.city,
         latitude,
         longitude,
+        radiusKm,
       })));
     },
     async listNearbyRestaurants(req, res) {
       const { page, pageSize } = parsePagination(req.query);
       const discoveryService = await service();
       const { latitude, longitude } = discoveryService.parseLocation(req.query);
+      const radiusKm = discoveryService.parseRadius(req.query);
       res.json(successResponse(await discoveryService.listNearbyRestaurants({
         accessToken: requireBearerToken(req),
         page,
@@ -48,6 +53,7 @@ export function createRestaurantDiscoveryController({ getRestaurantDiscoveryServ
         city: req.query.city,
         latitude,
         longitude,
+        radiusKm,
       })));
     },
     async getRestaurant(req, res) {
@@ -78,6 +84,7 @@ export function createRestaurantDiscoveryController({ getRestaurantDiscoveryServ
         restaurantId: req.params.restaurantId,
         latitude,
         longitude,
+        platform: req.query.platform,
       })));
     },
   };

@@ -68,6 +68,10 @@ function stringParam(name, description, required = false) {
   return { name, schema: { type: 'string' }, description, required };
 }
 
+function stringEnumParam(name, description, allowed, required = false) {
+  return { name, schema: { type: 'string', enum: allowed }, description, required };
+}
+
 function integerParam(name, description, required = false) {
   return { name, schema: { type: 'integer' }, description, required };
 }
@@ -710,6 +714,8 @@ export const endpointCatalog = {
     ]),
   },
   'GET /api/v1/restaurants': {
+    description:
+      'List active restaurants, optionally filtered by city, search term, or proximity (latitude/longitude/radius). Sponsored/featured placements are sorted to the top within their proximity band.',
     parameters: makeQueryParameters([
       integerParam('page', 'Page number.', true),
       integerParam('pageSize', 'Page size.', true),
@@ -717,9 +723,12 @@ export const endpointCatalog = {
       stringParam('city', 'Optional city filter.'),
       numberParam('latitude', 'Optional latitude.'),
       numberParam('longitude', 'Optional longitude.'),
+      numberParam('radius', 'Optional proximity radius override in km (overrides the user-configured radius).'),
     ]),
   },
   'GET /api/v1/restaurants/featured': {
+    description:
+      'List active restaurants that opt into the featured listing package. Sponsored placements sort to the top within their proximity band.',
     parameters: makeQueryParameters([
       integerParam('page', 'Page number.', true),
       integerParam('pageSize', 'Page size.', true),
@@ -727,11 +736,12 @@ export const endpointCatalog = {
       stringParam('city', 'Optional city filter.'),
       numberParam('latitude', 'Optional latitude.'),
       numberParam('longitude', 'Optional longitude.'),
+      numberParam('radius', 'Optional proximity radius override in km.'),
     ]),
   },
   'GET /api/v1/restaurants/nearby': {
     description:
-      'List nearby restaurants sorted by distance when latitude and longitude are supplied. Without coordinates, results fall back to the requested city or the authenticated user city.',
+      'List nearby restaurants sorted by distance when latitude and longitude are supplied. Without coordinates, results fall back to the requested city or the authenticated user city. Sponsored/featured/trending placements sort to the top within the proximity band.',
     parameters: makeQueryParameters([
       integerParam('page', 'Page number.', true),
       integerParam('pageSize', 'Page size.', true),
@@ -739,12 +749,30 @@ export const endpointCatalog = {
       stringParam('city', 'Optional city override used for filtering or location fallback.'),
       numberParam('latitude', 'Optional current user latitude.'),
       numberParam('longitude', 'Optional current user longitude.'),
+      numberParam('radius', 'Optional proximity radius override in km.'),
     ]),
   },
   'GET /api/v1/restaurants/{restaurant_id}': {
     parameters: makeQueryParameters([
       numberParam('latitude', 'Optional latitude.'),
       numberParam('longitude', 'Optional longitude.'),
+    ]),
+  },
+  'GET /api/v1/restaurants/{restaurant_id}/menu': {
+    description:
+      'Return the menu for a restaurant. The response includes latitude and longitude so the menu screen can hand off to navigation without an extra round-trip.',
+    parameters: makeQueryParameters([
+      numberParam('latitude', 'Optional latitude.'),
+      numberParam('longitude', 'Optional longitude.'),
+    ]),
+  },
+  'GET /api/v1/restaurants/{restaurant_id}/directions': {
+    description:
+      'Return navigation URLs for Google Maps, Apple Maps, and Waze. The `platform` query param selects the deep-link vs web fallback strategy. Each provider carries a `fallbackReason` so clients know when a URL is only a web fallback (`no_native_app`).',
+    parameters: makeQueryParameters([
+      numberParam('latitude', 'Optional origin latitude.'),
+      numberParam('longitude', 'Optional origin longitude.'),
+      stringEnumParam('platform', 'Optional client platform.', ['ios', 'android', 'web']),
     ]),
   },
   'POST /api/v1/restaurants/{restaurant_id}/reviews': {
