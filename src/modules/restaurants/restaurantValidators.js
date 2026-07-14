@@ -1,4 +1,5 @@
 import { ApplicationError, validationError } from '../../core/ApplicationError.js';
+import { getActiveCityNames, isActiveCity, loadGeographyConfig } from '../geography/geographyPolicy.js';
 
 function assertObject(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -105,17 +106,19 @@ function parseQrCode(body) {
   };
 }
 
-export function validateRestaurantCreate(body, file) {
+export function validateRestaurantCreate(body, file, { geographyConfig = loadGeographyConfig() } = {}) {
   assertObject(body);
   requireImage(file);
   const pointsPerCheckIn = requiredInteger(body, 'pointsPerCheckIn', { min: 0, max: 10_000 });
   const checkinRadiusMeters = hasOwn(body, 'checkinRadiusMeters')
     ? requiredInteger(body, 'checkinRadiusMeters', { min: 10, max: 5_000 })
     : 100;
+  const city = optionalString(body, 'city', { min: 2, max: 120 }) ?? null;
+  assertActiveCity(city, geographyConfig);
   return {
     name: requiredString(body, 'name', { min: 2, max: 120 }),
     address: requiredString(body, 'address', { min: 5, max: 255 }),
-    city: optionalString(body, 'city', { min: 2, max: 120 }) ?? null,
+    city,
     latitude: requiredNumber(body, 'latitude'),
     longitude: requiredNumber(body, 'longitude'),
     category: requiredString(body, 'category', { min: 2, max: 60 }),
@@ -139,12 +142,28 @@ export function validateRestaurantCreate(body, file) {
   };
 }
 
-export function validateRestaurantUpdate(body) {
+function assertActiveCity(city, geographyConfig) {
+  if (!city) return; // city is optional for create/update
+  if (isActiveCity(city, geographyConfig)) return;
+  throw new ApplicationError({
+    code: 'restaurant_city_out_of_service',
+    message: `Field 'city' must be one of: ${getActiveCityNames(geographyConfig).join(', ')}.`,
+    statusCode: 422,
+    details: {
+      activeCities: getActiveCityNames(geographyConfig),
+      providedCity: city,
+    },
+  });
+}
+
+export function validateRestaurantUpdate(body, { geographyConfig = loadGeographyConfig() } = {}) {
   assertObject(body);
+  const city = optionalString(body, 'city', { min: 2, max: 120 }) ?? null;
+  assertActiveCity(city, geographyConfig);
   return {
     name: requiredString(body, 'name', { min: 2, max: 120 }),
     address: requiredString(body, 'address', { min: 5, max: 255 }),
-    city: optionalString(body, 'city', { min: 2, max: 120 }) ?? null,
+    city,
     latitude: requiredNumber(body, 'latitude'),
     longitude: requiredNumber(body, 'longitude'),
     category: requiredString(body, 'category', { min: 2, max: 60 }),

@@ -5,6 +5,7 @@ import { FirestoreFavoriteRepository } from '../favorites/favoriteRepository.js'
 import { FirestoreMenuItemRepository, FirestoreMenuRepository } from '../menus/menuRepository.js';
 import { FirestoreRestaurantRepository } from '../restaurants/restaurantRepository.js';
 import { FirestoreReviewRepository } from '../reviews/reviewRepository.js';
+import { loadGeographyConfig } from '../geography/geographyPolicy.js';
 import { RestaurantDiscoveryService } from './restaurantDiscoveryService.js';
 
 let cachedServicePromise;
@@ -20,6 +21,11 @@ export function getRestaurantDiscoveryService(config) {
         favoriteRepository: new FirestoreFavoriteRepository(firestore),
         userRepository: new FirestoreUserRepository(firestore),
         identityProvider: new FirebaseIdentityProvider({ auth, config }),
+        geographyConfig: config.geographyConfig ?? loadGeographyConfig({
+          ACTIVE_CITIES: process.env.ACTIVE_CITIES,
+          DEFAULT_PROXIMITY_RADIUS_KM: process.env.DEFAULT_PROXIMITY_RADIUS_KM,
+          SECONDARY_PROXIMITY_RADIUS_KM: process.env.SECONDARY_PROXIMITY_RADIUS_KM,
+        }),
       });
     });
   }

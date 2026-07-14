@@ -2,6 +2,8 @@ import dotenv from 'dotenv';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { loadGeographyConfig } from './modules/geography/geographyPolicy.js';
+
 dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)) });
 
 function parseJsonConfig(value) {
@@ -138,5 +140,13 @@ export function loadConfig() {
       process.env.POINTS_EXPIRY_DAYS && Number(process.env.POINTS_EXPIRY_DAYS) > 0
         ? Number(process.env.POINTS_EXPIRY_DAYS)
         : null,
+    // BR-009 + BR-010: Geographic policy. MVP defaults: Mexico City,
+    // Monterrey, Guadalajara; default radius 5 km. See
+    // src/modules/geography/geographyPolicy.js.
+    geographyConfig: loadGeographyConfig({
+      ACTIVE_CITIES: process.env.ACTIVE_CITIES,
+      DEFAULT_PROXIMITY_RADIUS_KM: process.env.DEFAULT_PROXIMITY_RADIUS_KM,
+      SECONDARY_PROXIMITY_RADIUS_KM: process.env.SECONDARY_PROXIMITY_RADIUS_KM,
+    }),
   };
 }

@@ -16,6 +16,7 @@ import { FirestoreLevelRepository } from '../levels/levelRepository.js';
 import { FirestorePointsLedgerRepository, FirestoreXpLedgerRepository } from '../xp/xpRepository.js';
 import { XpService } from '../xp/xpService.js';
 import { loadInactivityConfig } from '../leaderboard/inactivityPolicy.js';
+import { loadGeographyConfig } from '../geography/geographyPolicy.js';
 import { UserService } from './userService.js';
 
 let cachedServicePromise;
@@ -49,6 +50,11 @@ export function getUserService(config) {
         proximityAlertLogRepository: new FirestoreProximityAlertLogRepository(firestore),
         pushNotificationService,
         proximityAlertCooldownMinutes: config.proximityAlertCooldownMinutes,
+        geographyConfig: config.geographyConfig ?? loadGeographyConfig({
+          ACTIVE_CITIES: process.env.ACTIVE_CITIES,
+          DEFAULT_PROXIMITY_RADIUS_KM: process.env.DEFAULT_PROXIMITY_RADIUS_KM,
+          SECONDARY_PROXIMITY_RADIUS_KM: process.env.SECONDARY_PROXIMITY_RADIUS_KM,
+        }),
         imageStorage: new FirebaseImageStorage({
           storage: getStorage(app),
           config,
@@ -61,6 +67,11 @@ export function getUserService(config) {
           inactivityConfig: loadInactivityConfig({
             RANK_FILTER_ENABLED: process.env.RANK_FILTER_ENABLED,
             POINTS_EXPIRY_DAYS: process.env.POINTS_EXPIRY_DAYS,
+          }),
+          geographyConfig: config.geographyConfig ?? loadGeographyConfig({
+            ACTIVE_CITIES: process.env.ACTIVE_CITIES,
+            DEFAULT_PROXIMITY_RADIUS_KM: process.env.DEFAULT_PROXIMITY_RADIUS_KM,
+            SECONDARY_PROXIMITY_RADIUS_KM: process.env.SECONDARY_PROXIMITY_RADIUS_KM,
           }),
         }),
       });

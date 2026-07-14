@@ -1,8 +1,10 @@
 import { ApplicationError } from '../../core/ApplicationError.js';
 import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/authorization.js';
 import { buildProximityAlertRecordId } from '../proximityAlerts/proximityAlertRepository.js';
-
-const DEFAULT_PROXIMITY_DISTANCE_KM = 0.3;
+import {
+  loadGeographyConfig,
+  resolveRadiusKm,
+} from '../geography/geographyPolicy.js';
 
 function profileData(user) {
   return {
@@ -22,15 +24,10 @@ function profileData(user) {
   };
 }
 
-function proximitySettingsData(user) {
-  const distanceKm =
-    user.proximityDistanceKm === null || user.proximityDistanceKm === undefined
-      ? DEFAULT_PROXIMITY_DISTANCE_KM
-      : user.proximityDistanceKm;
-
+function proximitySettingsData(user, geographyConfig) {
   return {
     enabled: user.proximityAlertsEnabled,
-    distanceInMeter: Math.round(distanceKm * 1000),
+    distanceInMeter: Math.round(resolveRadiusKm(user, geographyConfig) * 1000),
   };
 }
 
@@ -50,6 +47,7 @@ export class UserService {
     proximityAlertLogRepository = null,
     pushNotificationService = null,
     proximityAlertCooldownMinutes = 1440,
+    geographyConfig = loadGeographyConfig(),
   }) {
     this.userRepository = userRepository;
     this.loginEventRepository = loginEventRepository;
@@ -65,6 +63,7 @@ export class UserService {
     this.proximityAlertLogRepository = proximityAlertLogRepository;
     this.pushNotificationService = pushNotificationService;
     this.proximityAlertCooldownMinutes = proximityAlertCooldownMinutes;
+    this.geographyConfig = geographyConfig;
   }
 
   async getMe({ accessToken }) {
@@ -120,7 +119,7 @@ export class UserService {
 
   async getProximitySettings({ accessToken }) {
     const user = await this.getCurrentUser(accessToken);
-    return proximitySettingsData(user);
+    return proximitySettingsData(user, this.geographyConfig);
   }
 
   async updateProximitySettings({ accessToken, payload }) {
@@ -140,7 +139,7 @@ export class UserService {
       });
     }
     return {
-      settings: proximitySettingsData(updated),
+      settings: proximitySettingsData(updated, this.geographyConfig),
       triggeredAlerts: [],
     };
   }
@@ -537,10 +536,7 @@ export class UserService {
     if (!user.proximityAlertsEnabled) {
       return { triggeredAlerts: [], createdCount: 0, pushedCount: 0 };
     }
-    const thresholdKm =
-      user.proximityDistanceKm === null || user.proximityDistanceKm === undefined
-        ? DEFAULT_PROXIMITY_DISTANCE_KM
-        : user.proximityDistanceKm;
+    const thresholdKm = resolveRadiusKm(user, this.geographyConfig);
 
     const userLatitude = locationOverride?.latitude ?? user.lastKnownLatitude;
     const userLongitude = locationOverride?.longitude ?? user.lastKnownLongitude;

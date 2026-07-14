@@ -18,7 +18,9 @@ export function createRestaurantController({ getRestaurantServices, config }) {
       const { restaurantService } = await services();
       const data = await restaurantService.createRestaurant({
         accessToken: requireBearerToken(req),
-        payload: validateRestaurantCreate(req.body, req.file),
+        payload: validateRestaurantCreate(req.body, req.file, {
+          geographyConfig: config.geographyConfig,
+        }),
         image: req.file,
       });
       res.status(201).json(successResponse(data));
@@ -29,7 +31,9 @@ export function createRestaurantController({ getRestaurantServices, config }) {
       const data = await restaurantService.updateRestaurant({
         accessToken: requireBearerToken(req),
         restaurantId: req.params.restaurantId,
-        payload: validateRestaurantUpdate(req.body),
+        payload: validateRestaurantUpdate(req.body, {
+          geographyConfig: config.geographyConfig,
+        }),
         image: req.file ?? null,
       });
       res.json(successResponse(data));

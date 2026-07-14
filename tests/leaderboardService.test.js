@@ -906,8 +906,8 @@ test('BR-008 listLeaderboard honours rank filter for period=all_time', async () 
 test('BR-008 getMyRanks with scope omitted returns cityRank + nationalRank (backward compat)', async () => {
   const service = new LeaderboardService({
     userRepository: new FakeUserRepository([
-      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
-      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Chittagong', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Mexico City', country: 'Mexico' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Guadalajara', country: 'Mexico' }),
     ]),
     identityProvider: new FakeIdentityProvider('user-1'),
     xpRepository: new FakeXpRepository([
@@ -918,19 +918,19 @@ test('BR-008 getMyRanks with scope omitted returns cityRank + nationalRank (back
   });
 
   const ranks = await service.getMyRanks({ accessToken: 'token' });
-  assert.equal(ranks.city, 'Dhaka');
-  assert.equal(ranks.country, 'Bangladesh');
-  assert.equal(ranks.cityRank, 1, 'only user in Dhaka');
-  assert.equal(ranks.nationalRank, 2, 'second-highest in Bangladesh');
+  assert.equal(ranks.city, 'Mexico City');
+  assert.equal(ranks.country, 'Mexico');
+  assert.equal(ranks.cityRank, 1, 'only user in Mexico City');
+  assert.equal(ranks.nationalRank, 2, 'second-highest in Mexico');
   assert.equal(ranks.worldwideRank, null, 'worldwide rank not requested');
 });
 
 test('BR-008 getMyRanks with scope=worldwide returns worldwideRank', async () => {
   const service = new LeaderboardService({
     userRepository: new FakeUserRepository([
-      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
-      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Chittagong', country: 'Bangladesh' }),
-      makeUser({ uid: 'user-3', fullname: 'Carol', city: 'Singapore', country: 'Singapore' }),
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Mexico City', country: 'Mexico' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Monterrey', country: 'Mexico' }),
+      makeUser({ uid: 'user-3', fullname: 'Carol', city: 'Guadalajara', country: 'Mexico' }),
     ]),
     identityProvider: new FakeIdentityProvider('user-1'),
     xpRepository: new FakeXpRepository([
@@ -945,15 +945,15 @@ test('BR-008 getMyRanks with scope=worldwide returns worldwideRank', async () =>
   assert.equal(ranks.scope, 'worldwide');
   assert.equal(ranks.worldwideRank, 3, 'user-1 is rank 3 globally');
   assert.equal(ranks.cityRank, 1);
-  assert.equal(ranks.nationalRank, 2, '2 Bangladesh users, user-1 is rank 2');
+  assert.equal(ranks.nationalRank, 3, 'all 3 Mexico users rank');
 });
 
 test('BR-008 listLeaderboard with scope=worldwide returns global ranks', async () => {
   const service = new LeaderboardService({
     userRepository: new FakeUserRepository([
-      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
-      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Chittagong', country: 'Bangladesh' }),
-      makeUser({ uid: 'user-3', fullname: 'Carol', city: 'Singapore', country: 'Singapore' }),
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Mexico City', country: 'Mexico' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Monterrey', country: 'Mexico' }),
+      makeUser({ uid: 'user-3', fullname: 'Carol', city: 'Guadalajara', country: 'Mexico' }),
     ]),
     identityProvider: new FakeIdentityProvider('user-1'),
     xpRepository: new FakeXpRepository([
@@ -977,4 +977,101 @@ test('BR-008 listLeaderboard with scope=worldwide returns global ranks', async (
   assert.equal(result.items[0].rank, 1);
   assert.equal(result.items[1].userId, 'user-3');
   assert.equal(result.items[2].userId, 'user-1');
+});
+
+// ---------------------------------------------------------------------------
+// BR-010 — leaderboard out-of-service guard for non-MVP-city users
+// ---------------------------------------------------------------------------
+
+test('BR-010 getMyRanks returns cityRank=null for user in non-MVP city', async () => {
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Dhaka', country: 'Bangladesh' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100 }),
+      xpRecord({ userId: 'user-2', sourceType: 'check_in', xpDelta: 200, sourceId: 'u2-c1' }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const ranks = await service.getMyRanks({ accessToken: 'token' });
+  assert.equal(ranks.cityRank, null, 'non-MVP city -> cityRank is null');
+  assert.equal(ranks.nationalRank, 2, 'national rank still works');
+});
+
+test('BR-010 getMyRanks scope=worldwide works for non-MVP-city user', async () => {
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Mexico City', country: 'Mexico' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100 }),
+      xpRecord({ userId: 'user-2', sourceType: 'check_in', xpDelta: 200, sourceId: 'u2-c1' }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const ranks = await service.getMyRanks({ accessToken: 'token', scope: 'worldwide' });
+  assert.equal(ranks.cityRank, null);
+  assert.equal(ranks.worldwideRank, 2, 'worldwide rank is computed regardless of city');
+});
+
+test('BR-010 listLeaderboard with scope=local for non-MVP-city user returns outOfServiceArea', async () => {
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Mexico City', country: 'Mexico' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100 }),
+      xpRecord({ userId: 'user-2', sourceType: 'check_in', xpDelta: 200, sourceId: 'u2-c1' }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const result = await service.listLeaderboard({
+    accessToken: 'token',
+    page: 1,
+    pageSize: 10,
+    scope: 'local',
+    period: 'all_time',
+  });
+  assert.equal(result.serviceArea.outOfServiceArea, true);
+  assert.match(result.serviceArea.message, /Mexico City/);
+  assert.match(result.serviceArea.message, /Monterrey/);
+  assert.match(result.serviceArea.message, /Guadalajara/);
+  assert.deepEqual(result.serviceArea.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
+  // When out of service, the leaderboard falls through to show the
+  // worldwide view (all users); the outOfServiceArea flag signals to the
+  // mobile app that this is not a meaningful local ranking.
+  assert.equal(result.items.length, 2);
+});
+
+test('BR-010 listLeaderboard response always includes activeCities in serviceArea', async () => {
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Mexico City', country: 'Mexico' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-1'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-1', sourceType: 'check_in', xpDelta: 100 }),
+    ]),
+    pointsRepository: new FakePointsRepository([]),
+  });
+
+  const result = await service.listLeaderboard({
+    accessToken: 'token',
+    page: 1,
+    pageSize: 10,
+    scope: 'local',
+    period: 'all_time',
+  });
+  assert.deepEqual(result.serviceArea.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
+  assert.equal(result.serviceArea.outOfServiceArea, false);
 });

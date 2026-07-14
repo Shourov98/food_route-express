@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 import { ApplicationError } from '../../core/ApplicationError.js';
 import { generateNumericOtp, generateReferralCode, hashOtp } from '../../core/security.js';
+import { DEFAULT_PROXIMITY_RADIUS_KM } from '../geography/geographyPolicy.js';
 
 const OTP_PURPOSE = {
   REGISTER_VERIFY: 'register_verify',
@@ -137,7 +138,7 @@ export class AuthService {
       role: 'user',
       isVerified: false,
       isBlocked: false,
-      proximityDistanceKm: 0.3,
+      proximityDistanceKm: DEFAULT_PROXIMITY_RADIUS_KM,
       proximityAlertsEnabled: false,
       createdAt: now,
       updatedAt: now,

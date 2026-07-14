@@ -1,22 +1,17 @@
 import { ApplicationError, validationError } from '../../core/ApplicationError.js';
 import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/authorization.js';
 import { buildPaginationMeta } from '../../shared/pagination.js';
-
-const ACTIVE_CITIES = ['Mexico City', 'Monterrey', 'Guadalajara'];
-const PRIMARY_RADIUS_KM = 5;
-const SECONDARY_RADIUS_KM = 15;
+import {
+  getActiveCityNames,
+  isActiveCity,
+  loadGeographyConfig,
+  outOfServiceMessage,
+  resolveRadiusKm,
+  resolveSecondaryRadiusKm,
+} from '../geography/geographyPolicy.js';
 
 function normalizeCity(value) {
   return String(value ?? '').trim().toLowerCase();
-}
-
-function activeCityNames() {
-  return [...ACTIVE_CITIES];
-}
-
-function isActiveCity(value) {
-  const normalized = normalizeCity(value);
-  return ACTIVE_CITIES.some((city) => normalizeCity(city) === normalized);
 }
 
 function distanceKm(latitude, longitude, restaurantLatitude, restaurantLongitude) {
@@ -122,6 +117,7 @@ export class RestaurantDiscoveryService {
     favoriteRepository,
     userRepository,
     identityProvider,
+    geographyConfig = loadGeographyConfig(),
   }) {
     this.restaurantRepository = restaurantRepository;
     this.menuRepository = menuRepository;
@@ -130,6 +126,7 @@ export class RestaurantDiscoveryService {
     this.favoriteRepository = favoriteRepository;
     this.userRepository = userRepository;
     this.identityProvider = identityProvider;
+    this.geographyConfig = geographyConfig;
   }
 
   parseLocation(query) {
@@ -139,34 +136,112 @@ export class RestaurantDiscoveryService {
     };
   }
 
+  /**
+   * BR-010: enforce the active-city allowlist on manual city selection.
+   * Throws an `out_of_service_area` ApplicationError when:
+   *   1. The client supplied `?city=` and it's not in the active set, OR
+   *   2. The client supplied no `?city=` AND no lat/lng AND the user's
+   *      profile.city is set and not in the active set.
+   *
+   * When lat/lng are supplied we still return results even if the user's
+   * profile.city is in a non-active region — the lat/lng-based nearby
+   * flow uses the soft `serviceArea.outOfServiceArea` body flag instead
+   * of a hard error.
+   */
+  enforceManualCity({ city, latitude, longitude, user }) {
+    if (city) {
+      if (!isActiveCity(city, this.geographyConfig)) {
+        throw new ApplicationError({
+          code: 'out_of_service_area',
+          statusCode: 404,
+          message: outOfServiceMessage(this.geographyConfig),
+          details: {
+            activeCities: getActiveCityNames(this.geographyConfig),
+            requestedCity: city,
+          },
+        });
+      }
+      return;
+    }
+    if (!hasLocation(latitude, longitude) && user?.city && !isActiveCity(user.city, this.geographyConfig)) {
+      throw new ApplicationError({
+        code: 'out_of_service_area',
+        statusCode: 404,
+        message: outOfServiceMessage(this.geographyConfig),
+        details: {
+          activeCities: getActiveCityNames(this.geographyConfig),
+          profileCity: user.city,
+        },
+      });
+    }
+  }
+
   async listRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude }) {
     const user = await this.getCurrentUser(accessToken);
+    this.enforceManualCity({ city, latitude, longitude, user });
     const favoriteIds = await this.favoriteIds(user.uid);
     let records = (await this.restaurantRepository.listAll()).filter(
-      (record) => record.status === 'active' && isActiveCity(record.city),
+      (record) => record.status === 'active' && isActiveCity(record.city, this.geographyConfig),
     );
     records = this.filterRestaurants(records, { search, city });
-    return this.buildListResponse({ records, page, pageSize, latitude, longitude, favoriteIds });
+    return this.buildListResponse({
+      records,
+      page,
+      pageSize,
+      latitude,
+      longitude,
+      favoriteIds,
+      primaryRadiusKm: resolveRadiusKm(user, this.geographyConfig),
+      secondaryRadiusKm: resolveSecondaryRadiusKm(user, this.geographyConfig),
+    });
   }
 
   async listFeaturedRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude }) {
     const user = await this.getCurrentUser(accessToken);
+    this.enforceManualCity({ city, latitude, longitude, user });
     const favoriteIds = await this.favoriteIds(user.uid);
     let records = (await this.restaurantRepository.listAll()).filter(
       (record) =>
-        record.status === 'active' && isActiveCity(record.city) && supportsFeature(record, 'featuredListing'),
+        record.status === 'active' &&
+        isActiveCity(record.city, this.geographyConfig) &&
+        supportsFeature(record, 'featuredListing'),
     );
     records = this.filterRestaurants(records, { search, city });
-    return this.buildListResponse({ records, page, pageSize, latitude, longitude, favoriteIds });
+    return this.buildListResponse({
+      records,
+      page,
+      pageSize,
+      latitude,
+      longitude,
+      favoriteIds,
+      primaryRadiusKm: resolveRadiusKm(user, this.geographyConfig),
+      secondaryRadiusKm: resolveSecondaryRadiusKm(user, this.geographyConfig),
+    });
   }
 
   async listNearbyRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude }) {
     const user = await this.getCurrentUser(accessToken);
+    // Don't enforce a hard error here: the lat/lng-based "nearby" flow is
+    // a probe and the soft serviceArea flag is more useful. We still
+    // respect the active-city allowlist on manual city selection.
+    if (city && !isActiveCity(city, this.geographyConfig)) {
+      throw new ApplicationError({
+        code: 'out_of_service_area',
+        statusCode: 404,
+        message: outOfServiceMessage(this.geographyConfig),
+        details: {
+          activeCities: getActiveCityNames(this.geographyConfig),
+          requestedCity: city,
+        },
+      });
+    }
     const favoriteIds = await this.favoriteIds(user.uid);
     const effectiveCity = city || (hasLocation(latitude, longitude) ? null : user.city || null);
     let records = (await this.restaurantRepository.listAll()).filter(
       (record) =>
-        record.status === 'active' && isActiveCity(record.city) && supportsFeature(record, 'proximityAlerts'),
+        record.status === 'active' &&
+        isActiveCity(record.city, this.geographyConfig) &&
+        supportsFeature(record, 'proximityAlerts'),
     );
     records = this.filterRestaurants(records, { search, city: effectiveCity });
     return this.buildListResponse({
@@ -176,6 +251,8 @@ export class RestaurantDiscoveryService {
       latitude,
       longitude,
       favoriteIds,
+      primaryRadiusKm: resolveRadiusKm(user, this.geographyConfig),
+      secondaryRadiusKm: resolveSecondaryRadiusKm(user, this.geographyConfig),
       enforceProximityBands: hasLocation(latitude, longitude),
     });
   }
@@ -257,7 +334,7 @@ export class RestaurantDiscoveryService {
     let filtered = records;
     if (city) {
       const needleCity = city.trim().toLowerCase();
-      filtered = filtered.filter((record) => (record.city ?? '').toLowerCase() === needleCity);
+      filtered = filtered.filter((record) => normalizeCity(record.city) === needleCity);
     }
     if (search) {
       const needle = search.trim().toLowerCase();
@@ -265,7 +342,7 @@ export class RestaurantDiscoveryService {
         record.name.toLowerCase().includes(needle) ||
         record.address.toLowerCase().includes(needle) ||
         record.category.toLowerCase().includes(needle) ||
-        (record.city ?? '').toLowerCase().includes(needle),
+        normalizeCity(record.city).includes(needle),
       );
     }
     return filtered;
@@ -278,6 +355,8 @@ export class RestaurantDiscoveryService {
     latitude,
     longitude,
     favoriteIds,
+    primaryRadiusKm,
+    secondaryRadiusKm,
     enforceProximityBands = false,
   }) {
     let items = await Promise.all(
@@ -292,16 +371,18 @@ export class RestaurantDiscoveryService {
     );
     let radiusKm = null;
     if (enforceProximityBands) {
-      const primaryItems = items.filter((item) => item.distanceKm !== null && item.distanceKm <= PRIMARY_RADIUS_KM);
+      const primaryItems = items.filter(
+        (item) => item.distanceKm !== null && item.distanceKm <= primaryRadiusKm,
+      );
       const secondaryItems = items.filter(
-        (item) => item.distanceKm !== null && item.distanceKm <= SECONDARY_RADIUS_KM,
+        (item) => item.distanceKm !== null && item.distanceKm <= secondaryRadiusKm,
       );
       if (primaryItems.length) {
         items = primaryItems;
-        radiusKm = PRIMARY_RADIUS_KM;
+        radiusKm = primaryRadiusKm;
       } else {
         items = secondaryItems;
-        radiusKm = SECONDARY_RADIUS_KM;
+        radiusKm = secondaryRadiusKm;
       }
     }
     items.sort((left, right) => {
@@ -314,17 +395,16 @@ export class RestaurantDiscoveryService {
     });
     const totalItems = items.length;
     const start = (page - 1) * pageSize;
+    const outOfServiceArea =
+      enforceProximityBands && items.length === 0;
     return {
       items: items.slice(start, start + pageSize),
       pagination: buildPaginationMeta({ page, pageSize, totalItems }),
       serviceArea: {
-        activeCities: activeCityNames(),
+        activeCities: getActiveCityNames(this.geographyConfig),
         radiusKm,
-        outOfServiceArea: enforceProximityBands && items.length === 0,
-        message:
-          enforceProximityBands && items.length === 0
-            ? 'Food Route is currently available in Mexico City, Monterrey, and Guadalajara. Choose one of these cities manually to browse restaurants.'
-            : null,
+        outOfServiceArea,
+        message: outOfServiceArea ? outOfServiceMessage(this.geographyConfig) : null,
       },
     };
   }
@@ -336,7 +416,11 @@ export class RestaurantDiscoveryService {
 
   async getActiveRestaurant(restaurantId) {
     const restaurant = await this.restaurantRepository.getById(restaurantId);
-    if (!restaurant || restaurant.status !== 'active' || !isActiveCity(restaurant.city)) {
+    if (
+      !restaurant ||
+      restaurant.status !== 'active' ||
+      !isActiveCity(restaurant.city, this.geographyConfig)
+    ) {
       throw new ApplicationError({
         code: 'restaurant_not_found',
         message: 'No restaurant found for the provided identifier.',
