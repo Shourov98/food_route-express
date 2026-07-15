@@ -948,6 +948,54 @@ test('BR-008 getMyRanks with scope=worldwide returns worldwideRank', async () =>
   assert.equal(ranks.nationalRank, 3, 'all 3 Mexico users rank');
 });
 
+test('BR-008 zero-XP user still receives a non-null rank (bottom of active board)', async () => {
+  // Brand-new user has signup-bonus points but no earned XP — BR-008 keeps
+  // them off the active board, yet the requesting user should still see
+  // their own standing. They should land at the bottom of the active board
+  // rather than getting null.
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-new', fullname: 'Newbie', city: 'Mexico City', country: 'Mexico' }),
+      makeUser({ uid: 'user-2', fullname: 'Bob', city: 'Monterrey', country: 'Mexico' }),
+      makeUser({ uid: 'user-3', fullname: 'Carol', city: 'Guadalajara', country: 'Mexico' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-new'),
+    xpRepository: new FakeXpRepository([
+      xpRecord({ userId: 'user-2', sourceType: 'check_in', xpDelta: 300, sourceId: 'u2-c1' }),
+      xpRecord({ userId: 'user-3', sourceType: 'check_in', xpDelta: 200, sourceId: 'u3-c1' }),
+    ]),
+    pointsRepository: new FakePointsRepository([
+      pointsRecord({ userId: 'user-new', sourceType: 'signup_bonus', pointsDelta: 100 }),
+    ]),
+  });
+
+  const ranks = await service.getMyRanks({ accessToken: 'token' });
+  assert.equal(ranks.cityRank, 1, 'only user in Mexico City');
+  assert.equal(ranks.nationalRank, 3, 'bottom of 2 active users + self = 3');
+  assert.equal(ranks.worldwideRank, null);
+});
+
+test('BR-008 zero-XP user gets rank 1 when there are no active users', async () => {
+  // Edge case: brand-new user is the only one with the country/city on
+  // file. There are no active users to compare against, so we still
+  // return a rank rather than null — they're rank 1 by virtue of being
+  // the only candidate.
+  const service = new LeaderboardService({
+    userRepository: new FakeUserRepository([
+      makeUser({ uid: 'user-new', fullname: 'Newbie', city: 'Mexico City', country: 'Mexico' }),
+    ]),
+    identityProvider: new FakeIdentityProvider('user-new'),
+    xpRepository: new FakeXpRepository([]),
+    pointsRepository: new FakePointsRepository([
+      pointsRecord({ userId: 'user-new', sourceType: 'signup_bonus', pointsDelta: 100 }),
+    ]),
+  });
+
+  const ranks = await service.getMyRanks({ accessToken: 'token' });
+  assert.equal(ranks.cityRank, 1);
+  assert.equal(ranks.nationalRank, 1);
+});
+
 test('BR-008 listLeaderboard with scope=worldwide returns global ranks', async () => {
   const service = new LeaderboardService({
     userRepository: new FakeUserRepository([

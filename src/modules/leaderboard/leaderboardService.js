@@ -106,7 +106,21 @@ export class LeaderboardService {
   async rankForUser(userId, { city = null, country = null } = {}) {
     const rows = await this.aggregateUserXp({ city, country });
     const index = rows.findIndex((row) => row.user.uid === userId);
-    return index === -1 ? null : index + 1;
+    if (index !== -1) {
+      return index + 1;
+    }
+    // BR-008 keeps brand-new users off the public board until they earn XP,
+    // but the requesting user should still see their own standing. Rank the
+    // zero-XP user against the active board by treating their XP as 0 —
+    // the sort comparator sorts by `currentXp` desc, so 0 falls after every
+    // active row. `insertionIndex` is the first row that should rank below
+    // a hypothetical zero-XP entry; with everyone else above 0, that's
+    // `rows.length` and the user gets the bottom-of-board position
+    // (`rows.length + 1`) rather than null.
+    const insertionIndex = rows.findIndex(
+      (row) => (row.currentXp ?? 0) < 0,
+    );
+    return (insertionIndex === -1 ? rows.length : insertionIndex) + 1;
   }
 
   async totalXp(userId) {
