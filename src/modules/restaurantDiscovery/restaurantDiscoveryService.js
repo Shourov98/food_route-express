@@ -259,10 +259,9 @@ export class RestaurantDiscoveryService {
 
   async listRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude, radiusKm }) {
     const user = await this.getCurrentUser(accessToken);
-    this.enforceManualCity({ city, latitude, longitude, user });
     const favoriteIds = await this.favoriteIds(user.uid);
     let records = (await this.restaurantRepository.listAll()).filter(
-      (record) => record.status === 'active' && isActiveCity(record.city, this.geographyConfig),
+      (record) => record.status === 'active',
     );
     records = this.filterRestaurants(records, { search, city });
     const placementBoosts = await buildPlacementBoosts(
@@ -289,12 +288,10 @@ export class RestaurantDiscoveryService {
 
   async listFeaturedRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude, radiusKm }) {
     const user = await this.getCurrentUser(accessToken);
-    this.enforceManualCity({ city, latitude, longitude, user });
     const favoriteIds = await this.favoriteIds(user.uid);
     let records = (await this.restaurantRepository.listAll()).filter(
       (record) =>
         record.status === 'active' &&
-        isActiveCity(record.city, this.geographyConfig) &&
         supportsFeature(record, 'featuredListing'),
     );
     records = this.filterRestaurants(records, { search, city });
@@ -337,11 +334,9 @@ export class RestaurantDiscoveryService {
       });
     }
     const favoriteIds = await this.favoriteIds(user.uid);
-    const effectiveCity = city || (hasLocation(latitude, longitude) ? null : user.city || null);
+    const effectiveCity = city || null;
     let records = (await this.restaurantRepository.listAll()).filter(
-      (record) =>
-        record.status === 'active' &&
-        isActiveCity(record.city, this.geographyConfig),
+      (record) => record.status === 'active',
     );
     records = this.filterRestaurants(records, { search, city: effectiveCity });
     const placementBoosts = await buildPlacementBoosts(
@@ -542,11 +537,7 @@ export class RestaurantDiscoveryService {
 
   async getActiveRestaurant(restaurantId) {
     const restaurant = await this.restaurantRepository.getById(restaurantId);
-    if (
-      !restaurant ||
-      restaurant.status !== 'active' ||
-      !isActiveCity(restaurant.city, this.geographyConfig)
-    ) {
+    if (!restaurant || restaurant.status !== 'active') {
       throw new ApplicationError({
         code: 'restaurant_not_found',
         message: 'No restaurant found for the provided identifier.',

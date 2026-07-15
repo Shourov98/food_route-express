@@ -132,10 +132,11 @@ test('RestaurantDiscoveryService sorts nearby restaurants by distance when coord
   assert.equal(result.serviceArea.radiusKm, 5);
 });
 
-test('RestaurantDiscoveryService falls back to the user city when nearby location is absent', async () => {
+test('RestaurantDiscoveryService returns the full worldwide catalog when nearby location is absent', async () => {
   const service = createService([
     makeRestaurant('mexico', { city: 'Mexico City' }),
     makeRestaurant('monterrey', { city: 'Monterrey', latitude: 25.6866, longitude: -100.3161 }),
+    makeRestaurant('dhaka', { city: 'Dhaka', latitude: 23.8103, longitude: 90.4125 }),
   ]);
 
   const result = await service.listNearbyRestaurants({
@@ -148,95 +149,89 @@ test('RestaurantDiscoveryService falls back to the user city when nearby locatio
     longitude: null,
   });
 
-  assert.deepEqual(result.items.map((item) => item.id), ['mexico']);
-  assert.equal(result.items[0].distanceKm, null);
+  // No lat/lng → no proximity band filtering; the entire worldwide catalog
+  // is returned regardless of the user's profile city.
+  const ids = result.items.map((item) => item.id).sort();
+  assert.deepEqual(ids, ['dhaka', 'mexico', 'monterrey']);
+  assert.equal(result.items.every((item) => item.distanceKm === null), true);
 });
 
 // ---------------------------------------------------------------------------
-// BR-010 — out_of_service_area error path
+// Worldwide coverage — no active-city enforcement (per product decision:
+// restaurants from any city worldwide are visible to all users).
 // ---------------------------------------------------------------------------
 
-test('BR-010 listRestaurants throws out_of_service_area when ?city= is not in allowlist', async () => {
-  const service = createService([makeRestaurant('mexico', { city: 'Mexico City' })]);
+test('listRestaurants returns the full active catalog for any city profile', async () => {
+  const dhaka = makeRestaurant('dhaka', { city: 'Dhaka', latitude: 23.8103, longitude: 90.4125 });
+  const mexico = makeRestaurant('mexico', { city: 'Mexico City' });
+  const service = createService([dhaka, mexico], makeUser({ city: 'Dhaka' }));
 
-  await assert.rejects(
-    service.listRestaurants({
-      accessToken: 'user-1',
-      page: 1,
-      pageSize: 10,
-      search: null,
-      city: 'Karachi',
-      latitude: null,
-      longitude: null,
-    }),
-    (err) => {
-      assert.ok(err instanceof ApplicationError);
-      assert.equal(err.code, 'out_of_service_area');
-      assert.equal(err.statusCode, 404);
-      assert.deepEqual(err.details.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
-      assert.equal(err.details.requestedCity, 'Karachi');
-      return true;
-    },
-  );
+  const result = await service.listRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: null,
+    latitude: null,
+    longitude: null,
+  });
+
+  const ids = result.items.map((item) => item.id).sort();
+  assert.deepEqual(ids, ['dhaka', 'mexico']);
 });
 
-test('BR-010 listFeaturedRestaurants throws out_of_service_area when ?city= is not in allowlist', async () => {
-  const service = createService([makeRestaurant('mexico', { city: 'Mexico City' })]);
+test('listFeaturedRestaurants returns the full active catalog for any city profile', async () => {
+  const dhaka = makeRestaurant('dhaka', { city: 'Dhaka' });
+  const service = createService([dhaka], makeUser({ city: 'Dhaka' }));
 
-  await assert.rejects(
-    service.listFeaturedRestaurants({
-      accessToken: 'user-1',
-      page: 1,
-      pageSize: 10,
-      search: null,
-      city: 'Dhaka',
-      latitude: null,
-      longitude: null,
-    }),
-    (err) => err instanceof ApplicationError && err.code === 'out_of_service_area',
-  );
+  const result = await service.listFeaturedRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: null,
+    latitude: null,
+    longitude: null,
+  });
+
+  assert.deepEqual(result.items.map((item) => item.id), ['dhaka']);
 });
 
-test('BR-010 listNearbyRestaurants throws out_of_service_area when ?city= is not in allowlist', async () => {
-  const service = createService([makeRestaurant('mexico', { city: 'Mexico City' })]);
+test('listNearbyRestaurants returns the full active catalog for any city profile', async () => {
+  const dhaka = makeRestaurant('dhaka', { city: 'Dhaka', latitude: 23.8103, longitude: 90.4125 });
+  const mexico = makeRestaurant('mexico', { city: 'Mexico City' });
+  const service = createService([dhaka, mexico], makeUser({ city: 'Dhaka' }));
 
-  await assert.rejects(
-    service.listNearbyRestaurants({
-      accessToken: 'user-1',
-      page: 1,
-      pageSize: 10,
-      search: null,
-      city: 'Singapore',
-      latitude: 19.4,
-      longitude: -99.1,
-    }),
-    (err) => err instanceof ApplicationError && err.code === 'out_of_service_area',
-  );
+  const result = await service.listNearbyRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: null,
+    latitude: null,
+    longitude: null,
+  });
+
+  // No lat/lng → no proximity band filtering, full catalog returned regardless of city.
+  assert.equal(result.items.length, 2);
 });
 
-test('BR-010 listRestaurants throws out_of_service_area when user.city is non-active and no lat/lng supplied', async () => {
-  const service = createService(
-    [makeRestaurant('mexico', { city: 'Mexico City' })],
-    makeUser({ uid: 'user-1', city: 'Dhaka' }),
-  );
+test('listRestaurants accepts any ?city= string (no allowlist enforced)', async () => {
+  const dhaka = makeRestaurant('dhaka', { city: 'Dhaka' });
+  const service = createService([dhaka]);
 
-  await assert.rejects(
-    service.listRestaurants({
-      accessToken: 'user-1',
-      page: 1,
-      pageSize: 10,
-      search: null,
-      city: null,
-      latitude: null,
-      longitude: null,
-    }),
-    (err) => {
-      assert.ok(err instanceof ApplicationError);
-      assert.equal(err.code, 'out_of_service_area');
-      assert.equal(err.details.profileCity, 'Dhaka');
-      return true;
-    },
-  );
+  const result = await service.listRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: 'Karachi',
+    latitude: null,
+    longitude: null,
+  });
+
+  // search filter narrows to dhaka (name match)
+  assert.deepEqual(result.items.map((item) => item.id), []);
 });
 
 test('BR-010 listRestaurants succeeds when user.city is non-active but lat/lng are supplied', async () => {
@@ -462,14 +457,14 @@ test('BR-011 parseRadius rejects non-numeric radius', async () => {
   );
 });
 
-test('BR-011 listNearbyRestaurants returns all active-city restaurants regardless of package tier', async () => {
-  // Restaurants on the lower-tier packages (start, active, pro) should appear
-  // in the nearby feed. Only the active status + active-city allowlist apply.
-  const start = makeRestaurant('start', { currentPackage: 'start' });
-  const active = makeRestaurant('active', { currentPackage: 'active' });
-  const pro = makeRestaurant('pro', { currentPackage: 'pro' });
-  const prime = makeRestaurant('prime', { currentPackage: 'prime' });
-  const dominio = makeRestaurant('dominio', { currentPackage: 'dominio' });
+test('BR-011 listNearbyRestaurants returns all package tiers and all cities worldwide', async () => {
+  // Restaurants on every package tier AND every city worldwide should appear
+  // in the nearby feed. Only the active status filter applies.
+  const start = makeRestaurant('start', { currentPackage: 'start', city: 'Dhaka' });
+  const active = makeRestaurant('active', { currentPackage: 'active', city: 'Tokyo' });
+  const pro = makeRestaurant('pro', { currentPackage: 'pro', city: 'Berlin' });
+  const prime = makeRestaurant('prime', { currentPackage: 'prime', city: 'Mexico City' });
+  const dominio = makeRestaurant('dominio', { currentPackage: 'dominio', city: 'Lagos' });
   const service = createService([start, active, pro, prime, dominio], makeUser());
 
   const result = await service.listNearbyRestaurants({
@@ -484,6 +479,24 @@ test('BR-011 listNearbyRestaurants returns all active-city restaurants regardles
 
   const ids = result.items.map((item) => item.id).sort();
   assert.deepEqual(ids, ['active', 'dominio', 'prime', 'pro', 'start']);
+});
+
+test('BR-011 listRestaurants returns active restaurants from any city worldwide', async () => {
+  const dhaka = makeRestaurant('dhaka', { city: 'Dhaka', latitude: 23.8103, longitude: 90.4125 });
+  const tokyo = makeRestaurant('tokyo', { city: 'Tokyo', latitude: 35.6762, longitude: 139.6503 });
+  const mexico = makeRestaurant('mexico', { city: 'Mexico City', latitude: 19.4326, longitude: -99.1332 });
+  const service = createService([dhaka, tokyo, mexico], makeUser());
+
+  const result = await service.listRestaurants({
+    accessToken: 'user-1',
+    page: 1,
+    pageSize: 10,
+    search: null,
+    city: null,
+  });
+
+  const ids = result.items.map((item) => item.id).sort();
+  assert.deepEqual(ids, ['dhaka', 'mexico', 'tokyo']);
 });
 
 // ---------------------------------------------------------------------------

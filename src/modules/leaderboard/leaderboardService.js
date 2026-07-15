@@ -4,9 +4,7 @@ import { isEarningSourceType } from './rankingPolicy.js';
 import { isUserActiveForRanking, INACTIVITY_CONFIG_DEFAULTS } from './inactivityPolicy.js';
 import {
   getActiveCityNames,
-  isActiveCity,
   loadGeographyConfig,
-  outOfServiceMessage,
 } from '../geography/geographyPolicy.js';
 
 export class LeaderboardService {
@@ -29,19 +27,20 @@ export class LeaderboardService {
   async getMyRanks({ accessToken, scope }) {
     const user = await this.getCurrentUser(accessToken);
     const requestedScope = scope ?? null;
-    // BR-010: if the user's profile city is not in the active allowlist,
-    // the local rank dimension is meaningless — return null instead of an
-    // arbitrary global rank that includes users from other cities.
-    const userCityActive = user.city ? isActiveCity(user.city, this.geographyConfig) : false;
-    const cityRank = userCityActive
-      ? await this.rankForUser(user.uid, { city: user.city ?? null })
+    // City rank now reflects the user's local city regardless of the
+    // active-city allowlist. The allowlist previously suppressed the
+    // dimension for users outside the MVP geographies; with worldwide
+    // restaurant visibility the leaderboard surfaces the user's standing
+    // in their own city by string match (case-sensitive). Users with no
+    // city on file still get null here.
+    const cityRank = user.city
+      ? await this.rankForUser(user.uid, { city: user.city })
       : null;
-    // National rank remains available even for non-MVP-city users when
-    // their country is set; the leaderboard filters by country string, not
-    // by active-city allowlist. We only suppress it if the user has no
-    // country on file.
+    // National rank remains available whenever the user has a country on
+    // file; the leaderboard filters by country string, not by the
+    // active-city allowlist. Suppress only when the user has no country.
     const nationalRank = user.country
-      ? await this.rankForUser(user.uid, { country: user.country ?? null })
+      ? await this.rankForUser(user.uid, { country: user.country })
       : null;
     const worldwideRank = requestedScope === 'worldwide' || requestedScope === 'all'
       ? await this.rankForUser(user.uid, {})
@@ -62,16 +61,7 @@ export class LeaderboardService {
     const user = await this.getCurrentUser(accessToken);
     const since = this.periodStart(period);
     const scopeFilters = this.resolveScopeFilters(scope, user);
-    let { city, country } = scopeFilters;
-    let outOfServiceArea = false;
-    if (scope === 'local' && user.city && !isActiveCity(user.city, this.geographyConfig)) {
-      // Surface the out-of-service signal: empty local list + the same
-      // soft flag used by the discovery service. We don't throw the hard
-      // error here because the leaderboard is observational.
-      city = null;
-      country = null;
-      outOfServiceArea = true;
-    }
+    const { city, country } = scopeFilters;
     const ordered = await this.aggregateUserXp({ since, city, country });
     const totalItems = ordered.length;
     const start = (page - 1) * pageSize;
@@ -93,8 +83,6 @@ export class LeaderboardService {
       pagination: buildPaginationMeta({ page, pageSize, totalItems }),
       serviceArea: {
         activeCities: getActiveCityNames(this.geographyConfig),
-        outOfServiceArea,
-        message: outOfServiceArea ? outOfServiceMessage(this.geographyConfig) : null,
       },
     };
   }

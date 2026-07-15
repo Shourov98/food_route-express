@@ -980,10 +980,10 @@ test('BR-008 listLeaderboard with scope=worldwide returns global ranks', async (
 });
 
 // ---------------------------------------------------------------------------
-// BR-010 — leaderboard out-of-service guard for non-MVP-city users
+// Local city rank works for every city worldwide (no allowlist suppression)
 // ---------------------------------------------------------------------------
 
-test('BR-010 getMyRanks returns cityRank=null for user in non-MVP city', async () => {
+test('getMyRanks returns cityRank for a user in a non-MVP city (worldwide semantic)', async () => {
   const service = new LeaderboardService({
     userRepository: new FakeUserRepository([
       makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
@@ -998,11 +998,12 @@ test('BR-010 getMyRanks returns cityRank=null for user in non-MVP city', async (
   });
 
   const ranks = await service.getMyRanks({ accessToken: 'token' });
-  assert.equal(ranks.cityRank, null, 'non-MVP city -> cityRank is null');
+  // Alice has 100 XP, Bob has 200 XP — Alice ranks 2nd in Dhaka.
+  assert.equal(ranks.cityRank, 2, 'city rank now works for any city worldwide');
   assert.equal(ranks.nationalRank, 2, 'national rank still works');
 });
 
-test('BR-010 getMyRanks scope=worldwide works for non-MVP-city user', async () => {
+test('getMyRanks scope=worldwide works for a non-MVP-city user (cityRank now computed)', async () => {
   const service = new LeaderboardService({
     userRepository: new FakeUserRepository([
       makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
@@ -1017,11 +1018,11 @@ test('BR-010 getMyRanks scope=worldwide works for non-MVP-city user', async () =
   });
 
   const ranks = await service.getMyRanks({ accessToken: 'token', scope: 'worldwide' });
-  assert.equal(ranks.cityRank, null);
+  assert.equal(ranks.cityRank, 1, 'only Alice is in Dhaka → rank 1');
   assert.equal(ranks.worldwideRank, 2, 'worldwide rank is computed regardless of city');
 });
 
-test('BR-010 listLeaderboard with scope=local for non-MVP-city user returns outOfServiceArea', async () => {
+test('listLeaderboard with scope=local for a non-MVP-city user filters by that city', async () => {
   const service = new LeaderboardService({
     userRepository: new FakeUserRepository([
       makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Dhaka', country: 'Bangladesh' }),
@@ -1042,18 +1043,13 @@ test('BR-010 listLeaderboard with scope=local for non-MVP-city user returns outO
     scope: 'local',
     period: 'all_time',
   });
-  assert.equal(result.serviceArea.outOfServiceArea, true);
-  assert.match(result.serviceArea.message, /Mexico City/);
-  assert.match(result.serviceArea.message, /Monterrey/);
-  assert.match(result.serviceArea.message, /Guadalajara/);
+  // scope=local → filter by Dhaka. Only Alice is in Dhaka.
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].userId, 'user-1');
   assert.deepEqual(result.serviceArea.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
-  // When out of service, the leaderboard falls through to show the
-  // worldwide view (all users); the outOfServiceArea flag signals to the
-  // mobile app that this is not a meaningful local ranking.
-  assert.equal(result.items.length, 2);
 });
 
-test('BR-010 listLeaderboard response always includes activeCities in serviceArea', async () => {
+test('listLeaderboard response always includes activeCities in serviceArea', async () => {
   const service = new LeaderboardService({
     userRepository: new FakeUserRepository([
       makeUser({ uid: 'user-1', fullname: 'Alice', city: 'Mexico City', country: 'Mexico' }),
@@ -1073,5 +1069,4 @@ test('BR-010 listLeaderboard response always includes activeCities in serviceAre
     period: 'all_time',
   });
   assert.deepEqual(result.serviceArea.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
-  assert.equal(result.serviceArea.outOfServiceArea, false);
 });
