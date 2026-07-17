@@ -14,6 +14,10 @@ function toDate(value) {
   return new Date(value);
 }
 
+function toUtcDayKey(date) {
+  return date.toISOString().slice(0, 10);
+}
+
 function userFromDoc(doc) {
   if (!doc.exists) {
     return null;
@@ -264,9 +268,17 @@ export class FirestoreLoginEventRepository {
     });
   }
 
+  // Filters in-memory rather than via a composite `where(userId) + where(createdAt)`
+  // query, which would require a manual Firestore index. Per-user row counts
+  // are tiny (a few dozen a month at most), so the fetch is cheap.
+  async findByUserOnUtcDay(userId, utcDay) {
+    const records = await this.listByUser(userId);
+    return records.find((record) => toUtcDayKey(record.createdAt) === utcDay) || null;
+  }
+
   async countCurrentStreak(userId) {
     const records = await this.listByUser(userId);
-    const uniqueDates = [...new Set(records.map((record) => record.createdAt.toISOString().slice(0, 10)))]
+    const uniqueDates = [...new Set(records.map((record) => toUtcDayKey(record.createdAt)))]
       .sort()
       .reverse();
     if (uniqueDates.length === 0) {
@@ -277,7 +289,7 @@ export class FirestoreLoginEventRepository {
     // in UTC. Anything older means the chain is broken and the user must log
     // in again to start a new streak. Without this guard the function would
     // happily report a stale streak as if it were still alive.
-    const todayUtc = new Date().toISOString().slice(0, 10);
+    const todayUtc = toUtcDayKey(new Date());
     const todayMs = new Date(`${todayUtc}T00:00:00.000Z`).getTime();
     const latestMs = new Date(`${uniqueDates[0]}T00:00:00.000Z`).getTime();
     const daysSinceLatest = Math.round((todayMs - latestMs) / 86_400_000);

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 import { ApplicationError } from '../../core/ApplicationError.js';
 import { generateNumericOtp, generateReferralCode, hashOtp } from '../../core/security.js';
+import { getAuthenticatedAccount } from '../../shared/auth/authorization.js';
 import { DEFAULT_PROXIMITY_RADIUS_KM } from '../geography/geographyPolicy.js';
 
 const OTP_PURPOSE = {
@@ -263,6 +264,31 @@ export class AuthService {
     return loginResponseData(user, signInResult);
   }
 
+  // Idempotent per UTC day: opening the app N times counts as one streak day.
+  async recordActivity({ accessToken, now = new Date() }) {
+    const user = await getAuthenticatedAccount({
+      accessToken,
+      identityProvider: this.identityProvider,
+      userRepository: this.userRepository,
+      notFoundCode: 'user_not_found',
+      notFoundMessage: 'No user found for the provided credentials.',
+      notFoundStatusCode: 404,
+    });
+    this.ensureUserCanAuthenticate(user);
+
+    const today = now.toISOString().slice(0, 10);
+    const existing = await this.loginEventRepository.findByUserOnUtcDay(user.uid, today);
+    if (existing) {
+      return { recorded: false, date: today };
+    }
+    await this.loginEventRepository.create({
+      id: crypto.randomUUID(),
+      userId: user.uid,
+      createdAt: now,
+    });
+    return { recorded: true, date: today };
+  }
+
   async refreshSession(refreshToken) {
     const signInResult = await this.identityProvider.refreshSession(refreshToken);
     const identityUser = await this.identityProvider.verifyIdToken(signInResult.idToken);
@@ -275,7 +301,21 @@ export class AuthService {
       });
     }
     this.ensureUserCanAuthenticate(user);
+    await this.recordActivityForUser(user.uid);
     return loginResponseData(user, signInResult);
+  }
+
+  async recordActivityForUser(uid, now = new Date()) {
+    const today = now.toISOString().slice(0, 10);
+    const existing = await this.loginEventRepository.findByUserOnUtcDay(uid, today);
+    if (existing) {
+      return;
+    }
+    await this.loginEventRepository.create({
+      id: crypto.randomUUID(),
+      userId: uid,
+      createdAt: now,
+    });
   }
 
   async forgotPassword(email) {
@@ -504,5 +544,11 @@ export class AuthService {
       return 'A new password reset email link has been sent.';
     }
     return 'A new forgot-password OTP has been sent.';
+  }
+
+  getActivityRecordedMessage(recorded) {
+    return recorded
+      ? 'Activity recorded for today.'
+      : 'Activity already recorded for today.';
   }
 }

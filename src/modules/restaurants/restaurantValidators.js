@@ -95,14 +95,28 @@ function requireImage(file) {
   }
 }
 
+function hasQrCodeField(body) {
+  return (
+    hasOwn(body, 'qrCodeName') ||
+    hasOwn(body, 'qrCodeLatitude') ||
+    hasOwn(body, 'qrCodeLongitude') ||
+    hasOwn(body, 'qrCodeToken')
+  );
+}
+
 function parseQrCode(body) {
+  const name = optionalString(body, 'qrCodeName', { min: 2, max: 120 });
+  const latitude = hasOwn(body, 'qrCodeLatitude') ? Number(body.qrCodeLatitude) : null;
+  const longitude = hasOwn(body, 'qrCodeLongitude') ? Number(body.qrCodeLongitude) : null;
+  const token = optionalString(body, 'qrCodeToken', { min: 4, max: 128 });
+
   return {
-    name: requiredString(body, 'qrCodeName', { min: 2, max: 120 }),
+    name,
     location: {
-      latitude: requiredNumber(body, 'qrCodeLatitude'),
-      longitude: requiredNumber(body, 'qrCodeLongitude'),
+      latitude: Number.isFinite(latitude) ? latitude : null,
+      longitude: Number.isFinite(longitude) ? longitude : null,
     },
-    token: requiredString(body, 'qrCodeToken', { min: 4, max: 128 }),
+    token: token ?? null,
   };
 }
 
@@ -170,7 +184,8 @@ export function validateRestaurantUpdate(body, { geographyConfig = loadGeography
     openingTime: requiredTime(body, 'openingTime'),
     closingTime: requiredTime(body, 'closingTime'),
     imageUrl: optionalString(body, 'imageUrl') ?? null,
-    qrCode: parseQrCode(body),
+    qrCode: hasQrCodeField(body) ? parseQrCode(body) : undefined,
+    hasQrCodeField: hasQrCodeField(body),
     pointsPerCheckIn: requiredInteger(body, 'pointsPerCheckIn', { min: 0, max: 10_000 }),
     checkinRadiusMeters: hasOwn(body, 'checkinRadiusMeters')
       ? requiredInteger(body, 'checkinRadiusMeters', { min: 10, max: 5_000 })

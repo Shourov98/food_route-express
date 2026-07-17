@@ -3,6 +3,15 @@ import { randomUUID } from 'node:crypto';
 import { ApplicationError } from '../../core/ApplicationError.js';
 import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/authorization.js';
 
+function pickNonEmptyString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function pickCoordinate(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
 function buildEnabledFeatures(enabledPackages) {
   const packageSet = new Set(enabledPackages);
   const rules = [
@@ -191,6 +200,14 @@ export class RestaurantService {
       await this.imageStorage.uploadImage({ folder: `restaurants/${restaurantId}`, file: image })
     ).publicUrl;
 
+    const qrCode = this.normalizeQrCodeForWrite({
+      next: payload.qrCode,
+      restaurantId,
+      restaurantName: payload.name,
+      restaurantLatitude: payload.latitude,
+      restaurantLongitude: payload.longitude,
+    });
+
     const created = await this.restaurantRepository.create({
       id: restaurantId,
       name: payload.name,
@@ -202,7 +219,7 @@ export class RestaurantService {
       openingTime: payload.openingTime,
       closingTime: payload.closingTime,
       imageUrl,
-      qrCode: payload.qrCode,
+      qrCode,
       pointsPerCheckIn: payload.pointsPerCheckIn,
       checkinRadiusMeters: payload.checkinRadiusMeters,
       qrRequired: payload.qrRequired,
@@ -249,6 +266,16 @@ export class RestaurantService {
     const qrRequired = payload.hasQrRequiredField
       ? payload.qrRequired
       : (existing.qrRequired ?? true);
+    const qrCode = payload.hasQrCodeField
+      ? this.normalizeQrCodeForWrite({
+          next: payload.qrCode,
+          existing: existing.qrCode,
+          restaurantId,
+          restaurantName: payload.name,
+          restaurantLatitude: payload.latitude,
+          restaurantLongitude: payload.longitude,
+        })
+      : existing.qrCode;
 
     const updated = {
       ...existing,
@@ -264,7 +291,7 @@ export class RestaurantService {
         ? (await this.imageStorage.uploadImage({ folder: `restaurants/${restaurantId}`, file: image }))
             .publicUrl
         : payload.imageUrl || existing.imageUrl,
-      qrCode: payload.qrCode,
+      qrCode,
       pointsPerCheckIn: payload.pointsPerCheckIn,
       checkinRadiusMeters: payload.checkinRadiusMeters,
       qrRequired,
@@ -277,6 +304,32 @@ export class RestaurantService {
 
     await this.restaurantRepository.update(restaurantId, updated);
     return restaurantResponse(updated);
+  }
+
+  // Reconciles a possibly-partial QR payload against the existing record.
+  // Without this, any update that omits qrCodeToken (e.g. the dashboard's
+  // edit form pre-fills coordinates but the user hasn't touched the field)
+  // would erase the previously-printed token and break live QR scans.
+  normalizeQrCodeForWrite({ next, existing = null, restaurantId, restaurantName, restaurantLatitude, restaurantLongitude }) {
+    const nextQr = next ?? {};
+    const existingQr = existing ?? {};
+    const incomingToken = pickNonEmptyString(nextQr.token);
+    const existingToken = pickNonEmptyString(existingQr.token);
+
+    const token = incomingToken ?? existingToken ?? `qr-rest-${randomUUID()}`;
+    const name = nextQr.name ?? existingQr.name ?? `${restaurantName} Main Entrance`;
+    const latitude = pickCoordinate(nextQr.location?.latitude)
+      ?? pickCoordinate(existingQr.location?.latitude)
+      ?? restaurantLatitude;
+    const longitude = pickCoordinate(nextQr.location?.longitude)
+      ?? pickCoordinate(existingQr.location?.longitude)
+      ?? restaurantLongitude;
+
+    return {
+      name,
+      location: { latitude, longitude },
+      token,
+    };
   }
 
   async listRestaurants({ accessToken }) {

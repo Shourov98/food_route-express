@@ -1,6 +1,5 @@
-import { ApplicationError } from '../../core/ApplicationError.js';
-import { extractBearerToken } from '../../core/security.js';
 import { messageResponse, successResponse } from '../../core/response.js';
+import { requireBearerToken } from '../../shared/auth/authorization.js';
 import {
   validateChangePassword,
   validateEmail,
@@ -11,18 +10,6 @@ import {
   validateRegister,
   validateResetPassword,
 } from './authValidators.js';
-
-function requireBearerToken(req) {
-  const token = extractBearerToken(req.headers.authorization);
-  if (!token) {
-    throw new ApplicationError({
-      code: 'invalid_authorization_header',
-      message: 'Authorization header must be in the format: Bearer <token>.',
-      statusCode: 401,
-    });
-  }
-  return token;
-}
 
 export function createAuthController({ getAuthService, config }) {
   async function service() {
@@ -120,6 +107,12 @@ export function createAuthController({ getAuthService, config }) {
       const authService = await service();
       await authService.resetPasswordAfterOtp(payload);
       res.json(messageResponse('Password has been reset successfully.'));
+    },
+
+    async activity(req, res) {
+      const authService = await service();
+      const data = await authService.recordActivity({ accessToken: requireBearerToken(req) });
+      res.json(successResponse(data, authService.getActivityRecordedMessage(data.recorded)));
     },
   };
 }

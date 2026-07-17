@@ -29,6 +29,14 @@ function restaurantFromData(data = {}, fallbackId = 'unknown-restaurant') {
   const createdAt = toDate(data.createdAt ?? data.updatedAt) ?? new Date();
   const updatedAt = toDate(data.updatedAt ?? data.createdAt) ?? createdAt;
 
+  // Treat missing QR data as "no token bound" rather than a shared sentinel.
+  // Defaulting to 'unknown-token' caused every unconfigured restaurant to
+  // collide on getByQrToken lookups, returning whichever Firestore
+  // returned first instead of the actual scanned restaurant.
+  const qrToken = typeof qrCode.token === 'string' && qrCode.token.trim()
+    ? qrCode.token
+    : null;
+
   return {
     id: String(data.id ?? fallbackId),
     name: String(data.name ?? 'Unknown Restaurant'),
@@ -46,7 +54,7 @@ function restaurantFromData(data = {}, fallbackId = 'unknown-restaurant') {
         latitude: Number(location.latitude ?? 0),
         longitude: Number(location.longitude ?? 0),
       },
-      token: String(qrCode.token ?? data.id ?? 'unknown-token'),
+      token: qrToken,
     },
     pointsPerCheckIn: Number(data.pointsPerCheckIn ?? 0),
     checkinRadiusMeters: Number(data.checkinRadiusMeters ?? data.allowedRadiusMeters ?? 100),

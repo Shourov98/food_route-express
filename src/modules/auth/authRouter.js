@@ -21,6 +21,7 @@ export function createAuthRouter(config) {
   router.post('/verify-forgot-otp', asyncHandler(controller.verifyForgotOtp));
   router.post('/change-password', asyncHandler(controller.changePassword));
   router.post('/reset-password', asyncHandler(controller.resetPassword));
+  router.post('/activity', asyncHandler(controller.activity));
 
   return router;
 }
