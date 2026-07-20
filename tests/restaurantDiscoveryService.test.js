@@ -351,7 +351,10 @@ test('BR-010 listRestaurants response always includes activeCities in serviceAre
     latitude: null,
     longitude: null,
   });
-  assert.deepEqual(result.serviceArea.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
+  assert.deepEqual(
+    result.serviceArea.activeCities,
+    ['Mexico City', 'Monterrey', 'Guadalajara', 'Dhaka'],
+  );
   assert.equal(result.serviceArea.message, null, 'no message when not out of service');
 });
 

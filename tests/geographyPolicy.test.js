@@ -18,8 +18,11 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
-test('MVP_ACTIVE_CITIES contains exactly Mexico City, Monterrey, Guadalajara', () => {
-  assert.deepEqual([...MVP_ACTIVE_CITIES], ['Mexico City', 'Monterrey', 'Guadalajara']);
+test('MVP_ACTIVE_CITIES contains Mexico City, Monterrey, Guadalajara, Dhaka', () => {
+  assert.deepEqual(
+    [...MVP_ACTIVE_CITIES],
+    ['Mexico City', 'Monterrey', 'Guadalajara', 'Dhaka'],
+  );
 });
 
 test('Default radius constants', () => {
@@ -36,15 +39,25 @@ test('isActiveCity matches active cities (case-insensitive)', () => {
   assert.equal(isActiveCity('mexico city'), true);
   assert.equal(isActiveCity('MONTERREY'), true);
   assert.equal(isActiveCity('Guadalajara'), true);
+  assert.equal(isActiveCity('DHAKA'), true);
+  assert.equal(isActiveCity('dhaka'), true);
 });
 
 test('isActiveCity rejects unknown cities', () => {
-  assert.equal(isActiveCity('Dhaka'), false);
   assert.equal(isActiveCity('Karachi'), false);
+  assert.equal(isActiveCity('Cairo'), false);
+  assert.equal(isActiveCity('Bogota'), false);
   assert.equal(isActiveCity(''), false);
   assert.equal(isActiveCity(null), false);
   assert.equal(isActiveCity(undefined), false);
   assert.equal(isActiveCity('Mexico'), false, 'partial-match must fail');
+});
+
+test('isActiveCity accepts all MVP launch cities', () => {
+  assert.equal(isActiveCity('Dhaka'), true, 'Dhaka is part of MVP launch (BR-010)');
+  assert.equal(isActiveCity('Mexico City'), true);
+  assert.equal(isActiveCity('Monterrey'), true);
+  assert.equal(isActiveCity('Guadalajara'), true);
 });
 
 // ---------------------------------------------------------------------------
@@ -53,8 +66,9 @@ test('isActiveCity rejects unknown cities', () => {
 
 test('getActiveCityNames returns a copy of the allowlist', () => {
   const cities = getActiveCityNames();
-  assert.equal(cities.length, 3);
+  assert.equal(cities.length, 4);
   assert.equal(cities[0], 'Mexico City');
+  assert.equal(cities[3], 'Dhaka');
   cities[0] = 'Tampered';
   assert.equal(getActiveCityNames()[0], 'Mexico City',
     'returned array should be a copy, not a reference');
@@ -66,7 +80,10 @@ test('getActiveCityNames returns a copy of the allowlist', () => {
 
 test('loadGeographyConfig uses MVP defaults when env is empty', () => {
   const cfg = loadGeographyConfig({});
-  assert.deepEqual(cfg.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
+  assert.deepEqual(
+    cfg.activeCities,
+    ['Mexico City', 'Monterrey', 'Guadalajara', 'Dhaka'],
+  );
   assert.equal(cfg.defaultRadiusKm, 5);
   assert.equal(cfg.secondaryRadiusKm, 15);
 });
@@ -102,7 +119,10 @@ test('loadGeographyConfig rejects non-positive radii', () => {
 test('loadGeographyConfig falls back when ACTIVE_CITIES is invalid JSON', () => {
   const cfg = loadGeographyConfig({ ACTIVE_CITIES: '[broken json' });
   // Falls through to comma parsing which then fails (no commas) -> MVP defaults.
-  assert.deepEqual(cfg.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
+  assert.deepEqual(
+    cfg.activeCities,
+    ['Mexico City', 'Monterrey', 'Guadalajara', 'Dhaka'],
+  );
 });
 
 // ---------------------------------------------------------------------------

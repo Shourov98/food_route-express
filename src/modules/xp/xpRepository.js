@@ -115,8 +115,10 @@ export class FirestoreXpLedgerRepository {
       balanceBefore: record.balanceBefore ?? 0,
       balanceAfter: record.balanceAfter ?? record.xpDelta,
       status: record.status ?? 'committed',
-      city: record.city,
-      country: record.country,
+      // BR-002 + Firestore safety: never persist `undefined`. Some callers
+      // forget to pass city/country and Firestore rejects the entire doc.
+      city: record.city ?? '',
+      country: record.country ?? '',
       createdAt: record.createdAt ?? new Date(),
     };
     const firestore = this.collection.firestore ?? this.collection.db;
@@ -225,8 +227,9 @@ export class FirestorePointsLedgerRepository {
       balanceBefore: record.balanceBefore ?? 0,
       balanceAfter: record.balanceAfter ?? record.pointsDelta,
       status: record.status ?? 'committed',
-      city: record.city,
-      country: record.country,
+      // Firestore safety: never persist `undefined`. See xp_ledger comment.
+      city: record.city ?? '',
+      country: record.country ?? '',
       createdAt: record.createdAt ?? new Date(),
     };
     const firestore = this.collection.firestore ?? this.collection.db;

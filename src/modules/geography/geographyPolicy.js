@@ -6,8 +6,9 @@
 // downstream module imports from here, never re-declares the constants.
 //
 // MVP rules:
-//   - Active cities default to ['Mexico City', 'Monterrey', 'Guadalajara'].
-//     Env-overridable via ACTIVE_CITIES (JSON array OR comma-separated).
+//   - Active cities default to ['Mexico City', 'Monterrey', 'Guadalajara',
+//     'Dhaka'] (BR-010 + Bangladesh launch). Env-overridable via
+//     ACTIVE_CITIES (JSON array OR comma-separated).
 //   - Default proximity radius is 5 km (BR-009 "e.g. 5 km"). The user's
 //     own `proximityDistanceKm` always takes precedence when finite.
 //   - Secondary (widened) band is 3x the primary, with a floor of
@@ -23,6 +24,7 @@ export const MVP_ACTIVE_CITIES = Object.freeze([
   'Mexico City',
   'Monterrey',
   'Guadalajara',
+  'Dhaka',
 ]);
 
 export const DEFAULT_PROXIMITY_RADIUS_KM = 5;

@@ -1094,7 +1094,10 @@ test('listLeaderboard with scope=local for a non-MVP-city user filters by that c
   // scope=local → filter by Dhaka. Only Alice is in Dhaka.
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0].userId, 'user-1');
-  assert.deepEqual(result.serviceArea.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
+  assert.deepEqual(
+    result.serviceArea.activeCities,
+    ['Mexico City', 'Monterrey', 'Guadalajara', 'Dhaka'],
+  );
 });
 
 test('listLeaderboard response always includes activeCities in serviceArea', async () => {
@@ -1116,5 +1119,8 @@ test('listLeaderboard response always includes activeCities in serviceArea', asy
     scope: 'local',
     period: 'all_time',
   });
-  assert.deepEqual(result.serviceArea.activeCities, ['Mexico City', 'Monterrey', 'Guadalajara']);
+  assert.deepEqual(
+    result.serviceArea.activeCities,
+    ['Mexico City', 'Monterrey', 'Guadalajara', 'Dhaka'],
+  );
 });

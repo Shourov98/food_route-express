@@ -38,14 +38,16 @@ function checkinResponse(record, { restaurant = null, userBalances = null } = {}
 
   // Full restaurant payload — lets the client hydrate the restaurant
   // profile screen, show images/hours/menu points, and render the
-  // post-check-in modal without re-fetching.
+  // post-check-in modal without re-fetching. Every field is normalized
+  // (undefined → null) so that if any downstream code persists this
+  // object to Firestore, it doesn't crash on undefined values.
   if (restaurant) {
     response.restaurant = {
       id: restaurant.id,
       name: restaurant.name,
       address: restaurant.address,
-      city: restaurant.city,
-      country: restaurant.country,
+      city: restaurant.city ?? null,
+      country: restaurant.country ?? null,
       latitude: restaurant.latitude,
       longitude: restaurant.longitude,
       imageUrl: restaurant.imageUrl ?? null,
@@ -185,7 +187,10 @@ export class CheckInService {
       restaurantId: restaurant.id,
       restaurantName: restaurant.name,
       restaurantAddress: restaurant.address,
-      qrToken: restaurant.qrCode.token,
+      // BR-004 + Firestore safety: legacy restaurants may not have a qrCode
+      // object on file. Persist empty string instead of undefined so the
+      // check-in document survives a Firestore write.
+      qrToken: restaurant?.qrCode?.token ?? '',
       awardedXp,
       awardedPoints: awardedXp,
       createdAt: now,
