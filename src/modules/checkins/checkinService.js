@@ -18,8 +18,11 @@ function sameUtcDate(left, right) {
   return left.toISOString().slice(0, 10) === right.toISOString().slice(0, 10);
 }
 
-function checkinResponse(record) {
-  return {
+function checkinResponse(record, { restaurant = null, userBalances = null } = {}) {
+  // BR-016: After successful check-in, return enough context that the
+  // client can render the confirmation screen AND continue navigating
+  // back to the restaurant/profile without a second round-trip.
+  const response = {
     id: record.id,
     userId: record.userId,
     userFullname: record.userFullname,
@@ -32,6 +35,41 @@ function checkinResponse(record) {
     awardedPoints: record.awardedPoints,
     createdAt: record.createdAt,
   };
+
+  // Full restaurant payload — lets the client hydrate the restaurant
+  // profile screen, show images/hours/menu points, and render the
+  // post-check-in modal without re-fetching.
+  if (restaurant) {
+    response.restaurant = {
+      id: restaurant.id,
+      name: restaurant.name,
+      address: restaurant.address,
+      city: restaurant.city,
+      country: restaurant.country,
+      latitude: restaurant.latitude,
+      longitude: restaurant.longitude,
+      imageUrl: restaurant.imageUrl ?? null,
+      category: restaurant.category ?? null,
+      cuisine: restaurant.cuisine ?? null,
+      hours: restaurant.hours ?? null,
+      phone: restaurant.phone ?? null,
+      website: restaurant.website ?? null,
+      rating: restaurant.rating ?? null,
+      pointsPerCheckIn: restaurant.pointsPerCheckIn ?? 0,
+      pointsPerReceiptUpload: restaurant.pointsPerReceiptUpload ?? 0,
+      checkinRadiusMeters: restaurant.checkinRadiusMeters ?? null,
+      qrRequired: restaurant.qrRequired !== false,
+    };
+  }
+
+  // Updated balances — saves a /me/summary round-trip on the
+  // confirmation screen and prevents stale UI.
+  if (userBalances) {
+    response.userPointsAfter = userBalances.walletPoints;
+    response.userRankingPointsAfter = userBalances.rankingPoints;
+  }
+
+  return response;
 }
 
 export class CheckInService {
@@ -155,8 +193,24 @@ export class CheckInService {
 
     try {
       const created = await this.checkinRepository.create(record);
+      // BR-016: read back the updated wallet + ranking balances so the
+      // client can render the confirmation screen without a second
+      // round-trip. Fall back to 0 if the reads fail — better than
+      // dropping the successful check-in response.
+      let userBalances = null;
+      try {
+        const [walletPoints, rankingPoints] = await Promise.all([
+          this.xpService.getTotalPoints(user.uid).catch(() => 0),
+          this.xpService.getTotalRankingPoints
+            ? this.xpService.getTotalRankingPoints(user.uid).catch(() => 0)
+            : Promise.resolve(0),
+        ]);
+        userBalances = { walletPoints, rankingPoints };
+      } catch {
+        userBalances = null;
+      }
       return {
-        data: checkinResponse(created),
+        data: checkinResponse(created, { restaurant, userBalances }),
         message: 'Check-in completed successfully.',
       };
     } catch (error) {

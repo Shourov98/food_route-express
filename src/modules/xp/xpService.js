@@ -41,6 +41,22 @@ export class XpService {
     return records.reduce((total, record) => total + record.pointsDelta, 0);
   }
 
+  // BR-001 / BR-007: Ranking points = total earned points, never
+  // reduced by redemptions. Until the Wallet/Ranking ledger split
+  // (Task 1.1) lands, this falls back to getTotalPoints() so the API
+  // contract is in place. Once `balanceType` exists on the ledger,
+  // swap the implementation to filter by `balanceType === 'ranking'`.
+  async getTotalRankingPoints(userId) {
+    if (typeof this.pointsRepository.listByUserAndBalanceType === 'function') {
+      const records = await this.pointsRepository.listByUserAndBalanceType(
+        userId,
+        'ranking',
+      );
+      return records.reduce((total, record) => total + record.pointsDelta, 0);
+    }
+    return this.getTotalPoints(userId);
+  }
+
   async getSummary({ userId }) {
     const currentXp = await this.getTotalXp(userId);
     const levels = await this.getLevels();
