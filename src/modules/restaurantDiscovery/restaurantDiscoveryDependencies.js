@@ -1,6 +1,7 @@
 import { getFirebaseClients } from '../../infra/firebase.js';
 import { FirebaseIdentityProvider } from '../../infra/identityProvider.js';
 import { FirestoreUserRepository } from '../auth/authRepository.js';
+import { FirestoreCheckInRepository } from '../checkins/checkinRepository.js';
 import { FirestoreFavoriteRepository } from '../favorites/favoriteRepository.js';
 import { FirestoreMenuItemRepository, FirestoreMenuRepository } from '../menus/menuRepository.js';
 import { FirestorePlacementRepository } from '../placements/placementRepository.js';
@@ -20,6 +21,9 @@ export function getRestaurantDiscoveryService(config) {
         menuItemRepository: new FirestoreMenuItemRepository(firestore),
         reviewRepository: new FirestoreReviewRepository(firestore),
         favoriteRepository: new FirestoreFavoriteRepository(firestore),
+        // Injected so listItems can carry per-user check-in state
+        // (isCheckedIn, cooldownEndsAt, etc.) without an N+1 round-trip.
+        checkinRepository: new FirestoreCheckInRepository(firestore),
         userRepository: new FirestoreUserRepository(firestore),
         identityProvider: new FirebaseIdentityProvider({ auth, config }),
         geographyConfig: config.geographyConfig ?? loadGeographyConfig({

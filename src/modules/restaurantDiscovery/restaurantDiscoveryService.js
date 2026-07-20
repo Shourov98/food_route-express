@@ -71,7 +71,7 @@ function supportsFeature(record, featureKey) {
   return Boolean(record.currentPackage && matrix[featureKey]?.has(record.currentPackage));
 }
 
-function listItem(record, { latitude, longitude, reviews, isFavorite }) {
+function listItem(record, { latitude, longitude, reviews, isFavorite, userCheckinState = null }) {
   return {
     id: record.id,
     name: record.name,
@@ -85,6 +85,42 @@ function listItem(record, { latitude, longitude, reviews, isFavorite }) {
     distanceKm: distanceKm(latitude, longitude, record.latitude, record.longitude),
     ratingSummary: ratingSummary(reviews),
     isFavorite,
+    isCheckedIn: userCheckinState?.isCheckedIn ?? false,
+    lastCheckedInAt: userCheckinState?.lastCheckedInAt ?? null,
+    cooldownEndsAt: userCheckinState?.cooldownEndsAt ?? null,
+    userCheckinCount: userCheckinState?.userCheckinCount ?? 0,
+    todayCheckinCount: userCheckinState?.todayCheckinCount ?? 0,
+  };
+}
+
+/**
+ * Build the per-restaurant check-in state for a single restaurantId using
+ * the precomputed userCheckinIndex. The state reflects:
+ *   - isCheckedIn:        has the user checked in here in the last 24h?
+ *   - lastCheckedInAt:     timestamp of the most recent check-in (any time)
+ *   - cooldownEndsAt:      now + 24h if isCheckedIn else null
+ *   - userCheckinCount:    lifetime count at this restaurant
+ *   - todayCheckinCount:   check-ins within the last 24h
+ */
+function buildUserCheckinState(restaurantId, index, now = new Date()) {
+  const records = index?.byRestaurant.get(restaurantId);
+  if (!records || records.length === 0) {
+    return null; // caller fills defaults (false / null / 0)
+  }
+  const mostRecent = records[0]; // listByUser returns DESC by createdAt
+  const lastCheckedInAt = mostRecent.createdAt;
+  const lastCheckedInMs = new Date(lastCheckedInAt).getTime();
+  const ageMs = now.getTime() - lastCheckedInMs;
+  const isCheckedIn = ageMs < 24 * 60 * 60 * 1000;
+  const cooldownEndsAt = isCheckedIn
+    ? new Date(lastCheckedInMs + 24 * 60 * 60 * 1000)
+    : null;
+  return {
+    isCheckedIn,
+    lastCheckedInAt,
+    cooldownEndsAt,
+    userCheckinCount: records.length,
+    todayCheckinCount: index?.todayCountByRestaurant.get(restaurantId) ?? 0,
   };
 }
 
@@ -182,6 +218,7 @@ export class RestaurantDiscoveryService {
     menuItemRepository,
     reviewRepository,
     favoriteRepository,
+    checkinRepository = null,
     userRepository,
     identityProvider,
     geographyConfig = loadGeographyConfig(),
@@ -192,6 +229,7 @@ export class RestaurantDiscoveryService {
     this.menuItemRepository = menuItemRepository;
     this.reviewRepository = reviewRepository;
     this.favoriteRepository = favoriteRepository;
+    this.checkinRepository = checkinRepository;
     this.userRepository = userRepository;
     this.identityProvider = identityProvider;
     this.geographyConfig = geographyConfig;
@@ -260,6 +298,7 @@ export class RestaurantDiscoveryService {
   async listRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude, radiusKm }) {
     const user = await this.getCurrentUser(accessToken);
     const favoriteIds = await this.favoriteIds(user.uid);
+    const userCheckinIndex = await this.buildUserCheckinIndex(user.uid);
     let records = (await this.restaurantRepository.listAll()).filter(
       (record) => record.status === 'active',
     );
@@ -283,12 +322,14 @@ export class RestaurantDiscoveryService {
       primaryRadiusKm,
       secondaryRadiusKm,
       placementBoosts,
+      userCheckinIndex,
     });
   }
 
   async listFeaturedRestaurants({ accessToken, page, pageSize, search, city, latitude, longitude, radiusKm }) {
     const user = await this.getCurrentUser(accessToken);
     const favoriteIds = await this.favoriteIds(user.uid);
+    const userCheckinIndex = await this.buildUserCheckinIndex(user.uid);
     let records = (await this.restaurantRepository.listAll()).filter(
       (record) =>
         record.status === 'active' &&
@@ -314,6 +355,7 @@ export class RestaurantDiscoveryService {
       primaryRadiusKm,
       secondaryRadiusKm,
       placementBoosts,
+      userCheckinIndex,
     });
   }
 
@@ -334,6 +376,7 @@ export class RestaurantDiscoveryService {
       });
     }
     const favoriteIds = await this.favoriteIds(user.uid);
+    const userCheckinIndex = await this.buildUserCheckinIndex(user.uid);
     const effectiveCity = city || null;
     let records = (await this.restaurantRepository.listAll()).filter(
       (record) => record.status === 'active',
@@ -359,6 +402,7 @@ export class RestaurantDiscoveryService {
       secondaryRadiusKm,
       enforceProximityBands: hasLocation(latitude, longitude),
       placementBoosts,
+      userCheckinIndex,
     });
   }
 
@@ -369,6 +413,8 @@ export class RestaurantDiscoveryService {
     const menuItems = menu ? await this.menuItemRepository.listByMenuId(menu.id) : [];
     const reviews = await this.reviewRepository.listByRestaurant(restaurant.id);
     const favoriteIds = await this.favoriteIds(user.uid);
+    const userCheckinIndex = await this.buildUserCheckinIndex(user.uid);
+    const userCheckinState = buildUserCheckinState(restaurant.id, userCheckinIndex);
 
     return {
       id: restaurant.id,
@@ -385,6 +431,11 @@ export class RestaurantDiscoveryService {
       menuItems: menuItems.map(menuItemData),
       reviews: reviews.map(reviewItem),
       isFavorite: favoriteIds.has(restaurant.id),
+      isCheckedIn: userCheckinState?.isCheckedIn ?? false,
+      lastCheckedInAt: userCheckinState?.lastCheckedInAt ?? null,
+      cooldownEndsAt: userCheckinState?.cooldownEndsAt ?? null,
+      userCheckinCount: userCheckinState?.userCheckinCount ?? 0,
+      todayCheckinCount: userCheckinState?.todayCheckinCount ?? 0,
     };
   }
 
@@ -395,6 +446,8 @@ export class RestaurantDiscoveryService {
     const menuItems = menu ? await this.menuItemRepository.listByMenuId(menu.id) : [];
     const reviews = await this.reviewRepository.listByRestaurant(restaurant.id);
     const favoriteIds = await this.favoriteIds(user.uid);
+    const userCheckinIndex = await this.buildUserCheckinIndex(user.uid);
+    const userCheckinState = buildUserCheckinState(restaurant.id, userCheckinIndex);
 
     return {
       restaurantId: restaurant.id,
@@ -412,6 +465,11 @@ export class RestaurantDiscoveryService {
       menuName: menu?.name ?? `${restaurant.name} Menu`,
       menuItems: menuItems.map(menuItemData),
       isFavorite: favoriteIds.has(restaurant.id),
+      isCheckedIn: userCheckinState?.isCheckedIn ?? false,
+      lastCheckedInAt: userCheckinState?.lastCheckedInAt ?? null,
+      cooldownEndsAt: userCheckinState?.cooldownEndsAt ?? null,
+      userCheckinCount: userCheckinState?.userCheckinCount ?? 0,
+      todayCheckinCount: userCheckinState?.todayCheckinCount ?? 0,
     };
   }
 
@@ -472,6 +530,7 @@ export class RestaurantDiscoveryService {
     secondaryRadiusKm,
     enforceProximityBands = false,
     placementBoosts = null,
+    userCheckinIndex = null,
   }) {
     let items = await Promise.all(
       records.map(async (record) =>
@@ -480,6 +539,9 @@ export class RestaurantDiscoveryService {
           longitude,
           reviews: await this.reviewRepository.listByRestaurant(record.id),
           isFavorite: favoriteIds.has(record.id),
+          userCheckinState: userCheckinIndex
+            ? buildUserCheckinState(record.id, userCheckinIndex)
+            : null,
         }),
       ),
     );
@@ -533,6 +595,51 @@ export class RestaurantDiscoveryService {
   async favoriteIds(userId) {
     const records = await this.favoriteRepository.listByUser(userId);
     return new Set(records.map((record) => record.restaurantId));
+  }
+
+  /**
+   * Group every check-in the user has ever made by restaurantId, with the
+   * most recent check-in first. Powers the per-restaurant check-in state
+   * surfaced on listItems (isCheckedIn, cooldownEndsAt, userCheckinCount,
+   * todayCheckinCount, lastCheckedInAt).
+   *
+   * BR-003: same restaurant may be checked in once per 24h window. We treat
+   * that window as "the previous 24 hours before now" rather than a UTC
+   * calendar day so the cooldown countdown is meaningful for the user.
+   *
+   * Single Firestore query per discovery request — no N+1 fan-out.
+   */
+  async buildUserCheckinIndex(userId, now = new Date()) {
+    if (!this.checkinRepository) {
+      return {
+        byRestaurant: new Map(),
+        totalCount: 0,
+        todayCountByRestaurant: new Map(),
+      };
+    }
+    const records = await this.checkinRepository.listByUser(userId);
+    const byRestaurant = new Map();
+    for (const record of records) {
+      const list = byRestaurant.get(record.restaurantId) ?? [];
+      list.push(record);
+      byRestaurant.set(record.restaurantId, list);
+    }
+    // listByUser already returns DESC by createdAt; preserve that.
+    const twentyFourHoursAgo = now.getTime() - 24 * 60 * 60 * 1000;
+    const todayCountByRestaurant = new Map();
+    for (const [restaurantId, list] of byRestaurant.entries()) {
+      const recentCount = list.filter(
+        (record) => new Date(record.createdAt).getTime() >= twentyFourHoursAgo,
+      ).length;
+      if (recentCount > 0) {
+        todayCountByRestaurant.set(restaurantId, recentCount);
+      }
+    }
+    return {
+      byRestaurant,
+      totalCount: records.length,
+      todayCountByRestaurant,
+    };
   }
 
   async getActiveRestaurant(restaurantId) {

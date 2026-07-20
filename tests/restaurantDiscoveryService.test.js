@@ -46,6 +46,20 @@ class FakeFavoriteRepository {
   }
 }
 
+// In-memory check-in repo whose records can be controlled per test.
+// Records are stored DESC by createdAt because that's what
+// FirestoreCheckInRepository.listByUser returns in production.
+class FakeCheckInRepository {
+  constructor(records = []) {
+    this.records = [...records].sort(
+      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    );
+  }
+  async listByUser(_userId) {
+    return [...this.records];
+  }
+}
+
 class FakeMenuRepository {
   async getByRestaurantId() {
     return null;
@@ -98,13 +112,14 @@ function makeRestaurant(id, overrides = {}) {
   };
 }
 
-function createService(restaurants, user = makeUser(), { placementRepository = null, menuRepository = null } = {}) {
+function createService(restaurants, user = makeUser(), { placementRepository = null, menuRepository = null, checkinRepository = null } = {}) {
   return new RestaurantDiscoveryService({
     restaurantRepository: new FakeRestaurantRepository(restaurants),
     menuRepository: menuRepository ?? new FakeMenuRepository(),
     menuItemRepository: new FakeMenuItemRepository(),
     reviewRepository: new FakeReviewRepository(),
     favoriteRepository: new FakeFavoriteRepository(),
+    checkinRepository,
     userRepository: new FakeUserRepository([user]),
     identityProvider: new FakeIdentityProvider(),
     placementRepository,
@@ -583,4 +598,222 @@ test('BR-012 getDirections defaults platform to web', async () => {
   });
   assert.equal(result.platform, 'web');
   assert.equal(result.providers.apple.fallbackReason, 'no_native_app');
+});
+
+// ---------------------------------------------------------------------------
+// BR-003 check-in state on listItems / restaurantDetail
+// ---------------------------------------------------------------------------
+
+test('listItem defaults check-in state to false/null/0 when user has never checked in', async () => {
+  const service = createService(
+    [makeRestaurant('r1', { city: 'Mexico City' })],
+    makeUser({ uid: 'u-1' }),
+    { checkinRepository: new FakeCheckInRepository([]) },
+  );
+
+  const result = await service.listRestaurants({
+    accessToken: 'u-1',
+    page: 1,
+    pageSize: 10,
+    latitude: 19.4,
+    longitude: -99.1,
+  });
+
+  const item = result.items[0];
+  assert.equal(item.isCheckedIn, false);
+  assert.equal(item.lastCheckedInAt, null);
+  assert.equal(item.cooldownEndsAt, null);
+  assert.equal(item.userCheckinCount, 0);
+  assert.equal(item.todayCheckinCount, 0);
+});
+
+test('listItem surfaces isCheckedIn + cooldownEndsAt when user checked in < 24h ago', async () => {
+  const now = new Date('2026-07-20T12:00:00.000Z');
+  const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+  const service = createService(
+    [makeRestaurant('r1', { city: 'Mexico City' })],
+    makeUser({ uid: 'u-1' }),
+    {
+      checkinRepository: new FakeCheckInRepository([
+        {
+          id: 'c-1',
+          userId: 'u-1',
+          restaurantId: 'r1',
+          createdAt: twoHoursAgo,
+        },
+      ]),
+    },
+  );
+
+  const result = await service.listRestaurants({
+    accessToken: 'u-1',
+    page: 1,
+    pageSize: 10,
+    latitude: 19.4,
+    longitude: -99.1,
+  });
+
+  const item = result.items[0];
+  assert.equal(item.isCheckedIn, true);
+  assert.equal(item.lastCheckedInAt.toISOString(), twoHoursAgo.toISOString());
+  assert.equal(
+    item.cooldownEndsAt.toISOString(),
+    new Date(now.getTime() + 22 * 60 * 60 * 1000).toISOString(),
+    'cooldown should end 24h after the check-in',
+  );
+  assert.equal(item.userCheckinCount, 1);
+  assert.equal(item.todayCheckinCount, 1);
+});
+
+test('listItem reports isCheckedIn=false once the 24h cooldown has elapsed', async () => {
+  const now = new Date('2026-07-20T12:00:00.000Z');
+  const longAgo = new Date(now.getTime() - 30 * 60 * 60 * 1000); // 30 hours ago
+  const service = createService(
+    [makeRestaurant('r1', { city: 'Mexico City' })],
+    makeUser({ uid: 'u-1' }),
+    {
+      checkinRepository: new FakeCheckInRepository([
+        {
+          id: 'c-1',
+          userId: 'u-1',
+          restaurantId: 'r1',
+          createdAt: longAgo,
+        },
+      ]),
+    },
+  );
+
+  const result = await service.listRestaurants({
+    accessToken: 'u-1',
+    page: 1,
+    pageSize: 10,
+    latitude: 19.4,
+    longitude: -99.1,
+  });
+
+  const item = result.items[0];
+  assert.equal(item.isCheckedIn, false, 'cooldown should have expired');
+  assert.equal(item.cooldownEndsAt, null, 'no active cooldown means null');
+  assert.equal(item.lastCheckedInAt.toISOString(), longAgo.toISOString());
+  assert.equal(item.userCheckinCount, 1, 'lifetime count still records the old visit');
+  assert.equal(item.todayCheckinCount, 0);
+});
+
+test('listItem counts lifetime check-ins across multiple visits', async () => {
+  const now = new Date('2026-07-20T12:00:00.000Z');
+  const service = createService(
+    [makeRestaurant('r1', { city: 'Mexico City' })],
+    makeUser({ uid: 'u-1' }),
+    {
+      checkinRepository: new FakeCheckInRepository([
+        { id: 'c-3', userId: 'u-1', restaurantId: 'r1', createdAt: new Date(now.getTime() - 1 * 60 * 60 * 1000) },
+        { id: 'c-2', userId: 'u-1', restaurantId: 'r1', createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000) },
+        { id: 'c-1', userId: 'u-1', restaurantId: 'r1', createdAt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) },
+      ]),
+    },
+  );
+
+  const result = await service.listRestaurants({
+    accessToken: 'u-1',
+    page: 1,
+    pageSize: 10,
+    latitude: 19.4,
+    longitude: -99.1,
+  });
+
+  const item = result.items[0];
+  assert.equal(item.userCheckinCount, 3, 'lifetime total');
+  assert.equal(item.todayCheckinCount, 1, 'only the most recent is within 24h');
+  assert.equal(item.isCheckedIn, true);
+});
+
+test('listItem leaves other restaurants untouched when only one has check-ins', async () => {
+  const service = createService(
+    [
+      makeRestaurant('r-checked-in', { city: 'Mexico City' }),
+      makeRestaurant('r-not-checked-in', { city: 'Mexico City' }),
+    ],
+    makeUser({ uid: 'u-1' }),
+    {
+      checkinRepository: new FakeCheckInRepository([
+        {
+          id: 'c-1',
+          userId: 'u-1',
+          restaurantId: 'r-checked-in',
+          createdAt: new Date('2026-07-20T10:00:00.000Z'),
+        },
+      ]),
+    },
+  );
+
+  const result = await service.listRestaurants({
+    accessToken: 'u-1',
+    page: 1,
+    pageSize: 10,
+    latitude: 19.4,
+    longitude: -99.1,
+  });
+
+  const checkedIn = result.items.find((i) => i.id === 'r-checked-in');
+  const notCheckedIn = result.items.find((i) => i.id === 'r-not-checked-in');
+
+  assert.equal(checkedIn.isCheckedIn, true);
+  assert.equal(checkedIn.userCheckinCount, 1);
+
+  assert.equal(notCheckedIn.isCheckedIn, false);
+  assert.equal(notCheckedIn.userCheckinCount, 0);
+  assert.equal(notCheckedIn.cooldownEndsAt, null);
+});
+
+test('getRestaurant (detail) includes the same check-in state fields', async () => {
+  const service = createService(
+    [makeRestaurant('r1', { city: 'Mexico City' })],
+    makeUser({ uid: 'u-1' }),
+    {
+      checkinRepository: new FakeCheckInRepository([
+        {
+          id: 'c-1',
+          userId: 'u-1',
+          restaurantId: 'r1',
+          createdAt: new Date('2026-07-20T08:00:00.000Z'),
+        },
+      ]),
+    },
+  );
+
+  const result = await service.getRestaurant({
+    accessToken: 'u-1',
+    restaurantId: 'r1',
+    latitude: 19.4,
+    longitude: -99.1,
+  });
+
+  assert.equal(result.isCheckedIn, true);
+  assert.equal(result.userCheckinCount, 1);
+  assert.equal(result.todayCheckinCount, 1);
+  assert.ok(result.cooldownEndsAt instanceof Date);
+});
+
+test('listItem check-in fields default safely when checkinRepository is not injected', async () => {
+  // Backwards compatibility: a service constructed without checkinRepository
+  // (older DI / tests) must still respond with the documented defaults.
+  const service = createService(
+    [makeRestaurant('r1', { city: 'Mexico City' })],
+    makeUser({ uid: 'u-1' }),
+  );
+
+  const result = await service.listRestaurants({
+    accessToken: 'u-1',
+    page: 1,
+    pageSize: 10,
+    latitude: 19.4,
+    longitude: -99.1,
+  });
+
+  const item = result.items[0];
+  assert.equal(item.isCheckedIn, false);
+  assert.equal(item.lastCheckedInAt, null);
+  assert.equal(item.cooldownEndsAt, null);
+  assert.equal(item.userCheckinCount, 0);
+  assert.equal(item.todayCheckinCount, 0);
 });
