@@ -472,6 +472,11 @@ export class UserService {
     return {
       xpSummary: await this.xpService.getSummary({ userId: user.uid }),
       pointsSummary: await this.xpService.getPointsSummary({ userId: user.uid }),
+      // BR-007: period-scoped ranking XP so the mobile "you" row on the
+      // leaderboard can render distinct weekly/monthly/all_time values
+      // instead of collapsing them to one wallet total.
+      rankingPointsSummary:
+        await this.xpService.getRankingPointsSummary({ userId: user.uid }),
       rank: await this.leaderboardService.getMyRanks({ accessToken }),
       streak: await this.getStreak({ accessToken }),
       totalCheckInCount: await this.checkinRepository.countByUser(user.uid),

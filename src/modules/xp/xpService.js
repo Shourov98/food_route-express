@@ -98,6 +98,40 @@ export class XpService {
     return { currentPoints: await this.getTotalPoints(userId) };
   }
 
+  // BR-007: per-period ranking XP for the user-summary card. The leaderboard
+  // already aggregates per-period values server-side; this exposes the same
+  // semantics through the user-summary endpoint so the mobile client can
+  // render "you earned N points this week / month / lifetime" without
+  // collapsing all three into a single lifetime wallet total.
+  async getRankingPointsSummary({ userId, now = new Date() } = {}) {
+    const records = await this.xpRepository.listByUser(userId);
+    const earningRecords = records.filter((record) =>
+      isEarningSourceType(record.sourceType),
+    );
+    const weeklySince = startOfIsoWeek(now);
+    const monthlySince = startOfUtcMonth(now);
+    let weekly = 0;
+    let monthly = 0;
+    let allTime = 0;
+    for (const record of earningRecords) {
+      const createdAt = new Date(record.createdAt);
+      if (Number.isNaN(createdAt.getTime())) continue;
+      allTime += record.xpDelta ?? 0;
+      if (createdAt.getTime() >= monthlySince.getTime()) {
+        monthly += record.xpDelta ?? 0;
+      }
+      if (createdAt.getTime() >= weeklySince.getTime()) {
+        weekly += record.xpDelta ?? 0;
+      }
+    }
+    return {
+      weeklyPoints: weekly,
+      monthlyPoints: monthly,
+      allTimePoints: allTime,
+      currentPoints: await this.getTotalPoints(userId),
+    };
+  }
+
   async listPointsRecords() {
     return this.pointsRepository.listAll();
   }
@@ -247,4 +281,22 @@ export class XpService {
   async deletePointsRecord(recordId) {
     return this.pointsRepository.delete(recordId);
   }
+}
+
+// BR-007: period-bucketed cutoffs for the user-summary card. Mirrors the
+// same logic as LeaderboardService.periodStart so the values shown on the
+// summary screen always agree with the leaderboard screen.
+function startOfUtcMonth(now) {
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
+  );
+}
+
+function startOfIsoWeek(now) {
+  const day = now.getUTCDay();
+  const offset = day === 0 ? 6 : day - 1;
+  const start = new Date(now);
+  start.setUTCDate(now.getUTCDate() - offset);
+  start.setUTCHours(0, 0, 0, 0);
+  return start;
 }

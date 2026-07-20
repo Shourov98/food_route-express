@@ -362,6 +362,7 @@ test('UserService summaries include xp, points, rank, and streak', async () => {
   assert.equal(result.xpSummary.currentXp, 350);
   assert.equal(result.xpSummary.currentLevelName, 'Pathfinder');
   assert.equal(result.pointsSummary.currentPoints, 100);
+  assert.equal(result.rankingPointsSummary.allTimePoints, 350);
   assert.equal(result.rank.currentXp, 350);
   assert.equal(result.streak.currentStreak, 1);
   assert.equal(result.totalCheckInCount, 2);
@@ -590,4 +591,40 @@ test('UserService getReceiptSharePreview returns share-ready content for an owne
   assert.equal(result.restaurantName, 'Cafe One');
   assert.equal(result.pointsReward, 50);
   assert.equal(result.imageUrl, 'https://cdn.example.com/receipt.png');
+});
+
+// ---------------------------------------------------------------------------
+// BR-007: getRankingPointsSummary returns distinct per-period values.
+// Mirrors LeaderboardService.periodStart so the user-summary card agrees
+// with the leaderboard screen.
+// ---------------------------------------------------------------------------
+
+test('getRankingPointsSummary splits earned XP into weekly/monthly/allTime buckets', async () => {
+  const user = makeUser({ uid: 'u-periods' });
+  const xpRecords = [
+    // 60 days ago: outside both weekly and monthly buckets → allTime only.
+    { userId: 'u-periods', sourceType: 'check_in', xpDelta: 50, createdAt: new Date('2026-05-16T10:00:00.000Z') },
+    // 10 days ago: inside monthly but outside weekly.
+    { userId: 'u-periods', sourceType: 'receipt_upload', xpDelta: 80, createdAt: new Date('2026-07-05T10:00:00.000Z') },
+    // 2 days ago: inside both weekly and monthly.
+    { userId: 'u-periods', sourceType: 'check_in', xpDelta: 30, createdAt: new Date('2026-07-13T10:00:00.000Z') },
+    // Admin adjustment is NOT an earning source — must be ignored.
+    { userId: 'u-periods', sourceType: 'admin_adjustment', xpDelta: 9999, createdAt: new Date('2026-07-14T10:00:00.000Z') },
+  ];
+  const xpRepository = new FakeXpRepository(xpRecords);
+  const xpService = new XpService({
+    xpRepository,
+    pointsRepository: new FakePointsRepository([]),
+  });
+  const summary = await xpService.getRankingPointsSummary({
+    userId: user.uid,
+    now: new Date('2026-07-15T12:00:00.000Z'),
+  });
+
+  // allTime = 50 + 80 + 30 = 160 (admin excluded).
+  assert.equal(summary.allTimePoints, 160);
+  // monthly = 80 + 30 = 110 (only the rows on/after 2026-07-01).
+  assert.equal(summary.monthlyPoints, 110);
+  // weekly = 30 only (only the rows on/after the Monday of the current ISO week).
+  assert.equal(summary.weeklyPoints, 30);
 });
