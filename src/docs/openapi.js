@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { getEndpointCatalogEntry } from './endpointCatalog.js';
+import { componentSchemas } from './schemas.js';
 
 const ROUTE_LINE_RE = /^\s*-\s*(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(`?)(\/api\/v1\/[^\s`]+)\2/i;
 
@@ -340,7 +341,6 @@ export function buildOpenApiSpecFromRoutes({
         .toLowerCase(),
       parameters: extractPathParameters(route.path),
       responses: {
-        200: { description: 'Successful response' },
         400: {
           description: 'Validation or request error',
           content: {
@@ -375,6 +375,19 @@ export function buildOpenApiSpecFromRoutes({
         },
       },
     };
+
+    // Resolve success response from catalog. Methods default to 200 unless
+    // the catalog specifies a different status (e.g. 201 Created, 204 No
+    // Content). This preserves the original generic response when no entry
+    // exists, so undocumented routes still render in Swagger UI.
+    const catalogResponse = catalogEntry?.responses;
+    if (catalogResponse) {
+      for (const [status, response] of Object.entries(catalogResponse)) {
+        operation.responses[status] = response;
+      }
+    } else {
+      operation.responses[200] = { description: 'Successful response' };
+    }
 
     if (catalogEntry?.requestBody) {
       operation.requestBody = catalogEntry.requestBody;
@@ -432,27 +445,7 @@ export function buildOpenApiSpecFromRoutes({
           description: 'Paste the raw access token here. Swagger will add the Bearer prefix.',
         },
       },
-      schemas: {
-        ErrorResponse: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            error: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['code', 'message'],
-              properties: {
-                code: { type: 'string' },
-                message: { type: 'string' },
-                details: { oneOf: [{ type: 'string' }, { type: 'object' }, { type: 'array' }] },
-                field: { type: 'string' },
-                requestId: { type: 'string' },
-              },
-            },
-          },
-          required: ['error'],
-        },
-      },
+      schemas: componentSchemas,
     },
   };
 }

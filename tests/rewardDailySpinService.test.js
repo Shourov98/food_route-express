@@ -327,6 +327,53 @@ test('SpinService awards points and stores spin history', async () => {
   assert.equal(xpRepository.records.length, 1);
 });
 
+test('SpinService allows three spins per daily window and rejects the fourth', async () => {
+  const dailyRewardRepository = new FakeDailyRewardRepository([
+    {
+      id: 'daily-1',
+      title: 'Points Reward',
+      description: 'Claim a fixed points reward.',
+      rewardCategory: 'points',
+      pointsReward: 20,
+      pointsRequired: 0,
+      quantityAvailable: 5,
+      probability: 100,
+      initialQuantityAvailable: 5,
+      imageUrl: null,
+      isActive: true,
+      hasExpiry: false,
+      expiresAt: null,
+      createdBy: 'admin-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastResetAt: new Date(),
+    },
+  ]);
+  const spinRepository = new FakeSpinRepository();
+  const spinService = new SpinService({
+    dailyRewardRepository,
+    spinRepository,
+    spinSettingsRepository: new FakeSpinSettingsRepository(),
+    userRepository: new FakeUserRepository([makeUser({ uid: 'user-1', role: 'user' })]),
+    identityProvider: new FakeIdentityProvider(),
+    xpService: new XpService({
+      xpRepository: new FakeXpRepository(),
+      pointsRepository: new FakePointsRepository(),
+    }),
+    randomNumber: () => 0,
+  });
+
+  await spinService.spin({ accessToken: 'user-1' });
+  await spinService.spin({ accessToken: 'user-1' });
+  await spinService.spin({ accessToken: 'user-1' });
+
+  assert.equal(spinRepository.records.length, 3);
+  await assert.rejects(
+    spinService.spin({ accessToken: 'user-1' }),
+    (error) => error.code === 'spin_already_used',
+  );
+});
+
 test('RewardRedemptionService redeems reward and sends reward-claimed push', async () => {
   const now = new Date();
   const pushNotificationService = new FakePushNotificationService();

@@ -1,8 +1,11 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from "node:crypto";
 
-import { ApplicationError } from '../../core/ApplicationError.js';
-import { getAuthenticatedAccount, requireActiveRoles } from '../../shared/auth/authorization.js';
-import { buildPaginationMeta } from '../../shared/pagination.js';
+import { ApplicationError } from "../../core/ApplicationError.js";
+import {
+  getAuthenticatedAccount,
+  requireActiveRoles,
+} from "../../shared/auth/authorization.js";
+import { buildPaginationMeta } from "../../shared/pagination.js";
 
 function isoDay(date) {
   return date.toISOString().slice(0, 10);
@@ -11,6 +14,8 @@ function isoDay(date) {
 function cryptoRandomNumber() {
   return randomInt(0, 1_000_000_000) / 1_000_000_000;
 }
+
+const SPINS_PER_ELIGIBILITY_WINDOW = 15;
 
 function rewardItem(record) {
   return {
@@ -27,8 +32,8 @@ function rewardItem(record) {
     isActive: record.isActive,
     hasExpiry: record.hasExpiry,
     expiresAt: record.expiresAt,
-    isSynthetic: record.id === 'no_reward',
-    isInfiniteStock: record.id === 'no_reward',
+    isSynthetic: record.id === "no_reward",
+    isInfiniteStock: record.id === "no_reward",
   };
 }
 
@@ -85,11 +90,15 @@ export class SpinService {
     await this.refreshDailyRewards(now);
     const settings = await this.getSettings();
     const currentBoundary = this.spinEligibilityBoundary(now, settings);
-    const latest = await this.spinRepository.getLatestByUser(user.uid);
-    if (latest && latest.spunAt >= currentBoundary) {
+    const userSpins = await this.spinRepository.listByUser(user.uid);
+    const spinsInCurrentWindow = userSpins.filter(
+      (record) => record.spunAt >= currentBoundary,
+    ).length;
+    if (spinsInCurrentWindow >= SPINS_PER_ELIGIBILITY_WINDOW) {
       throw new ApplicationError({
-        code: 'spin_already_used',
-        message: 'You have already used your spin for the current eligibility window.',
+        code: "spin_already_used",
+        message:
+          "You have already used your spins for the current eligibility window.",
         statusCode: 400,
       });
     }
@@ -97,14 +106,14 @@ export class SpinService {
     const rewards = await this.spinableRewards();
     if (rewards.length === 0) {
       throw new ApplicationError({
-        code: 'spin_rewards_unavailable',
-        message: 'No spin rewards are currently available.',
+        code: "spin_rewards_unavailable",
+        message: "No spin rewards are currently available.",
         statusCode: 400,
       });
     }
 
     const chosen = this.chooseReward(rewards);
-    const isSynthetic = chosen.id === 'no_reward';
+    const isSynthetic = chosen.id === "no_reward";
     if (!isSynthetic) {
       chosen.quantityAvailable -= 1;
       chosen.updatedAt = now;
@@ -131,18 +140,18 @@ export class SpinService {
       await this.xpService.awardXp({
         userId: user.uid,
         delta: chosen.pointsReward,
-        sourceType: 'daily_reward_spin',
+        sourceType: "daily_reward_spin",
         sourceId: created.id,
-        city: user.city ?? '',
-        country: user.country ?? '',
+        city: user.city ?? "",
+        country: user.country ?? "",
       });
       await this.xpService.awardPoints({
         userId: user.uid,
         delta: chosen.pointsReward,
-        sourceType: 'daily_reward_spin',
+        sourceType: "daily_reward_spin",
         sourceId: created.id,
-        city: user.city ?? '',
-        country: user.country ?? '',
+        city: user.city ?? "",
+        country: user.country ?? "",
       });
     }
 
@@ -171,31 +180,43 @@ export class SpinService {
     const settings = await this.getSettings();
     await this.refreshDailyRewards(now);
     const spins = await this.spinRepository.listAll();
-    const totalSpinsToday = spins.filter((record) => isoDay(record.spunAt) === isoDay(now)).length;
-    const activeRewards = (await this.dailyRewardRepository.listAll()).filter((record) =>
-      this.rewardAvailable(record, now),
+    const totalSpinsToday = spins.filter(
+      (record) => isoDay(record.spunAt) === isoDay(now),
+    ).length;
+    const activeRewards = (await this.dailyRewardRepository.listAll()).filter(
+      (record) => this.rewardAvailable(record, now),
     );
     const totalInitial = activeRewards.reduce(
-      (sum, record) => sum + (record.initialQuantityAvailable ?? record.quantityAvailable),
+      (sum, record) =>
+        sum + (record.initialQuantityAvailable ?? record.quantityAvailable),
       0,
     );
     const totalUsed = activeRewards.reduce((sum, record) => {
-      const initial = record.initialQuantityAvailable ?? record.quantityAvailable;
+      const initial =
+        record.initialQuantityAvailable ?? record.quantityAvailable;
       return initial > 0 ? sum + (initial - record.quantityAvailable) : sum;
     }, 0);
 
     return {
       totalSpinsToday,
-      avgRedemptionRate: totalInitial ? Math.round((totalUsed / totalInitial) * 1000) / 10 : 0,
-      currentResetCycle: settings.resetLogic === 'daily' ? '24 Hours' : 'Manual',
+      avgRedemptionRate: totalInitial
+        ? Math.round((totalUsed / totalInitial) * 1000) / 10
+        : 0,
+      currentResetCycle:
+        settings.resetLogic === "daily" ? "24 Hours" : "Manual",
       resetLogic: settings.resetLogic,
       resetTimeUtc: settings.resetTimeUtc,
       totalProbability:
-        activeRewards.reduce((sum, record) => sum + Math.max(record.probability, 0), 0) +
-        Math.max(settings.noRewardProbability, 0),
+        activeRewards.reduce(
+          (sum, record) => sum + Math.max(record.probability, 0),
+          0,
+        ) + Math.max(settings.noRewardProbability, 0),
       noRewardProbability: settings.noRewardProbability,
       isProbabilityConfigured:
-        activeRewards.reduce((sum, record) => sum + Math.max(record.probability, 0), 0) +
+        activeRewards.reduce(
+          (sum, record) => sum + Math.max(record.probability, 0),
+          0,
+        ) +
           Math.max(settings.noRewardProbability, 0) >
         0,
     };
@@ -209,7 +230,10 @@ export class SpinService {
   async updateAdminSettings({ accessToken, payload }) {
     await this.getCurrentAdmin(accessToken);
     this.validateResetTime(payload.resetTimeUtc);
-    if (payload.noRewardProbability !== null && payload.noRewardProbability !== undefined) {
+    if (
+      payload.noRewardProbability !== null &&
+      payload.noRewardProbability !== undefined
+    ) {
       this.validateProbability(payload.noRewardProbability);
     }
     const existing = await this.getSettings();
@@ -218,7 +242,8 @@ export class SpinService {
       resetLogic: payload.resetLogic,
       resetTimeUtc: payload.resetTimeUtc,
       noRewardProbability:
-        payload.noRewardProbability !== null && payload.noRewardProbability !== undefined
+        payload.noRewardProbability !== null &&
+        payload.noRewardProbability !== undefined
           ? payload.noRewardProbability
           : existing.noRewardProbability,
       createdAt: existing.createdAt,
@@ -241,22 +266,26 @@ export class SpinService {
         rewards.push(record);
       }
     }
-    return rewards.sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+    return rewards.sort(
+      (left, right) =>
+        left.createdAt - right.createdAt || left.id.localeCompare(right.id),
+    );
   }
 
   rewardAvailable(record, now) {
     if (!record.isActive) return false;
     if (record.quantityAvailable <= 0) return false;
-    if (record.hasExpiry && record.expiresAt && record.expiresAt <= now) return false;
+    if (record.hasExpiry && record.expiresAt && record.expiresAt <= now)
+      return false;
     return true;
   }
 
   noRewardReward(now, settings) {
     return {
-      id: 'no_reward',
-      title: 'No Points',
-      description: 'No points this time.',
-      rewardCategory: 'points',
+      id: "no_reward",
+      title: "No Points",
+      description: "No points this time.",
+      rewardCategory: "points",
       pointsReward: 0,
       pointsRequired: 0,
       quantityAvailable: 2147483647,
@@ -266,7 +295,7 @@ export class SpinService {
       isActive: true,
       hasExpiry: false,
       expiresAt: null,
-      createdBy: 'system',
+      createdBy: "system",
       createdAt: now,
       updatedAt: now,
       lastResetAt: now,
@@ -279,7 +308,8 @@ export class SpinService {
       if (!this.shouldReset(record, now, settings)) {
         continue;
       }
-      const initial = record.initialQuantityAvailable ?? record.quantityAvailable;
+      const initial =
+        record.initialQuantityAvailable ?? record.quantityAvailable;
       await this.dailyRewardRepository.update(record.id, {
         ...record,
         quantityAvailable: initial,
@@ -291,7 +321,7 @@ export class SpinService {
   }
 
   shouldReset(record, now, settings) {
-    if (settings.resetLogic !== 'daily') {
+    if (settings.resetLogic !== "daily") {
       return false;
     }
     const boundary = this.resetBoundary(now, settings.resetTimeUtc);
@@ -303,9 +333,17 @@ export class SpinService {
 
   resetBoundary(now, resetTimeUtc) {
     this.validateResetTime(resetTimeUtc);
-    const [hour, minute] = resetTimeUtc.split(':').map(Number);
+    const [hour, minute] = resetTimeUtc.split(":").map(Number);
     const boundary = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute, 0, 0),
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        hour,
+        minute,
+        0,
+        0,
+      ),
     );
     if (now < boundary) {
       boundary.setUTCDate(boundary.getUTCDate() - 1);
@@ -314,7 +352,7 @@ export class SpinService {
   }
 
   spinEligibilityBoundary(now, settings) {
-    if (settings.resetLogic === 'daily') {
+    if (settings.resetLogic === "daily") {
       return this.resetBoundary(now, settings.resetTimeUtc);
     }
     const boundary = new Date(now);
@@ -324,7 +362,7 @@ export class SpinService {
 
   nextSpinAt(currentBoundary, settings) {
     const next = new Date(currentBoundary);
-    if (settings.resetLogic === 'daily') {
+    if (settings.resetLogic === "daily") {
       next.setUTCDate(next.getUTCDate() + 1);
       return next;
     }
@@ -333,10 +371,10 @@ export class SpinService {
   }
 
   validateResetTime(resetTimeUtc) {
-    const parts = String(resetTimeUtc).split(':');
+    const parts = String(resetTimeUtc).split(":");
     if (parts.length !== 2 || !parts.every((part) => /^\d+$/.test(part))) {
       throw new ApplicationError({
-        code: 'invalid_reset_time',
+        code: "invalid_reset_time",
         message: "Field 'resetTimeUtc' must use HH:MM 24-hour format.",
         statusCode: 400,
       });
@@ -345,8 +383,9 @@ export class SpinService {
     const minute = Number(parts[1]);
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
       throw new ApplicationError({
-        code: 'invalid_reset_time',
-        message: "Field 'resetTimeUtc' must be a valid UTC time in HH:MM format.",
+        code: "invalid_reset_time",
+        message:
+          "Field 'resetTimeUtc' must be a valid UTC time in HH:MM format.",
         statusCode: 400,
       });
     }
@@ -355,7 +394,7 @@ export class SpinService {
   validateProbability(probability) {
     if (probability < 0 || probability > 100) {
       throw new ApplicationError({
-        code: 'invalid_spin_probability',
+        code: "invalid_spin_probability",
         message: "Field 'noRewardProbability' must be between 0 and 100.",
         statusCode: 400,
       });
@@ -364,11 +403,11 @@ export class SpinService {
 
   async getSettings() {
     const record = await this.spinSettingsRepository.getCurrent();
-    if (!new Set(['daily', 'manual']).has(record.resetLogic)) {
+    if (!new Set(["daily", "manual"]).has(record.resetLogic)) {
       return {
-        id: 'current',
-        resetLogic: 'daily',
-        resetTimeUtc: '00:00',
+        id: "current",
+        resetLogic: "daily",
+        resetTimeUtc: "00:00",
         noRewardProbability: 0,
         createdAt: record.createdAt ?? new Date(),
         updatedAt: record.updatedAt ?? new Date(),
@@ -400,17 +439,17 @@ export class SpinService {
       accessToken,
       identityProvider: this.identityProvider,
       userRepository: this.userRepository,
-      notFoundCode: 'admin_not_found',
-      notFoundMessage: 'No admin account found for the provided credentials.',
+      notFoundCode: "admin_not_found",
+      notFoundMessage: "No admin account found for the provided credentials.",
       notFoundStatusCode: 403,
     });
     return requireActiveRoles({
       record,
-      allowedRoles: new Set(['admin', 'super_admin']),
-      roleErrorCode: 'admin_not_found',
-      roleErrorMessage: 'No admin account found for the provided credentials.',
-      blockedErrorCode: 'admin_blocked',
-      blockedErrorMessage: 'The admin account is blocked.',
+      allowedRoles: new Set(["admin", "super_admin"]),
+      roleErrorCode: "admin_not_found",
+      roleErrorMessage: "No admin account found for the provided credentials.",
+      blockedErrorCode: "admin_blocked",
+      blockedErrorMessage: "The admin account is blocked.",
     });
   }
 
@@ -419,18 +458,20 @@ export class SpinService {
       accessToken,
       identityProvider: this.identityProvider,
       userRepository: this.userRepository,
-      notFoundCode: 'user_not_found',
-      notFoundMessage: 'No end-user account found for the provided credentials.',
+      notFoundCode: "user_not_found",
+      notFoundMessage:
+        "No end-user account found for the provided credentials.",
       notFoundStatusCode: 404,
     });
     return requireActiveRoles({
       record,
-      allowedRoles: new Set(['user']),
-      roleErrorCode: 'user_not_found',
-      roleErrorMessage: 'No end-user account found for the provided credentials.',
+      allowedRoles: new Set(["user"]),
+      roleErrorCode: "user_not_found",
+      roleErrorMessage:
+        "No end-user account found for the provided credentials.",
       roleErrorStatusCode: 404,
-      blockedErrorCode: 'user_blocked',
-      blockedErrorMessage: 'The user account is blocked.',
+      blockedErrorCode: "user_blocked",
+      blockedErrorMessage: "The user account is blocked.",
     });
   }
 }
