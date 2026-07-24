@@ -15,7 +15,7 @@ function cryptoRandomNumber() {
   return randomInt(0, 1_000_000_000) / 1_000_000_000;
 }
 
-const SPINS_PER_ELIGIBILITY_WINDOW = 15;
+const SPINS_PER_ELIGIBILITY_WINDOW = 1;
 
 function rewardItem(record) {
   return {
