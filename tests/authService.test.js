@@ -217,6 +217,101 @@ test('AuthService register returns FastAPI-compatible response data', async () =
   assert.equal(xpService.pointAwards.length, 0);
 });
 
+test('AuthService register rejects an existing verified user', async () => {
+  const { service, userRepository } = createService();
+  await userRepository.create({
+    uid: 'user-1',
+    email: 'jane@example.com',
+    fullname: 'Jane Doe',
+    gender: 'female',
+    dateOfBirth: '1996-05-14',
+    city: 'Dhaka',
+    country: 'Bangladesh',
+    referralCode: 'ABCDEFGH',
+    role: 'user',
+    isBlocked: false,
+    isVerified: true,
+  });
+
+  await assert.rejects(
+    service.register({
+      fullname: 'Jane Doe',
+      email: 'jane@example.com',
+      gender: 'female',
+      dateOfBirth: '1996-05-14',
+      city: 'Dhaka',
+      country: 'Bangladesh',
+      password: 'Password123',
+    }),
+    (error) => error.code === 'user_already_exists' && error.statusCode === 409,
+  );
+});
+
+test('AuthService register returns success and reissues verification for an existing unverified user', async () => {
+  const { service, userRepository, emailService } = createService();
+  await userRepository.create({
+    uid: 'user-1',
+    email: 'jane@example.com',
+    fullname: 'Jane Doe',
+    gender: 'female',
+    dateOfBirth: '1996-05-14',
+    city: 'Dhaka',
+    country: 'Bangladesh',
+    referralCode: 'ABCDEFGH',
+    role: 'user',
+    isBlocked: false,
+    isVerified: false,
+  });
+
+  const result = await service.register({
+    fullname: 'Jane Doe',
+    email: 'jane@example.com',
+    gender: 'female',
+    dateOfBirth: '1996-05-14',
+    city: 'Dhaka',
+    country: 'Bangladesh',
+    password: 'Password123',
+  });
+
+  assert.equal(result.uid, 'user-1');
+  assert.equal(result.email, 'jane@example.com');
+  assert.equal(result.is_verified, false);
+  assert.equal(emailService.otps.length, 1);
+});
+
+test('AuthService registerWithReferral returns success for an existing unverified user', async () => {
+  const { service, userRepository, emailService } = createService();
+  await userRepository.create({
+    uid: 'user-1',
+    email: 'jane@example.com',
+    fullname: 'Jane Doe',
+    gender: 'female',
+    dateOfBirth: '1996-05-14',
+    city: 'Dhaka',
+    country: 'Bangladesh',
+    referralCode: 'ABCDEFGH',
+    role: 'user',
+    isBlocked: false,
+    isVerified: false,
+  });
+
+  const result = await service.registerWithReferral({
+    fullname: 'Jane Doe',
+    email: 'jane@example.com',
+    gender: 'female',
+    dateOfBirth: '1996-05-14',
+    city: 'Dhaka',
+    country: 'Bangladesh',
+    password: 'Password123',
+    referralCode: 'BADCODE1',
+  });
+
+  assert.equal(result.uid, 'user-1');
+  assert.equal(result.email, 'jane@example.com');
+  assert.equal(result.is_verified, false);
+  assert.equal(emailService.otps.length, 1);
+});
+
 test('AuthService awards signup bonus only after register OTP verification', async () => {
   const { service, emailService, xpService } = createService();
 

@@ -85,25 +85,21 @@ export class AuthService {
   }
 
   async register(payload) {
-    return this.registerInternal(payload, null);
+    return this.registerInternal(payload);
   }
 
   async registerWithReferral(payload) {
-    const referrer = await this.userRepository.getByReferralCode(payload.referralCode);
-    if (!referrer) {
-      throw new ApplicationError({
-        code: 'referral_code_not_found',
-        message: 'No user found for the provided referral code.',
-        statusCode: 404,
-      });
-    }
-
-    return this.registerInternal(payload, referrer.uid);
+    return this.registerInternal(payload, payload.referralCode);
   }
 
-  async registerInternal(payload, referredByUid) {
+  async registerInternal(payload, providedReferralCode = null) {
     const existingUser = await this.userRepository.getByEmail(payload.email);
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        await this.deliverRegistrationVerification(payload.email);
+        return registerResponseData(existingUser);
+      }
+
       throw new ApplicationError({
         code: 'user_already_exists',
         message: 'A user with this email already exists.',
@@ -111,6 +107,7 @@ export class AuthService {
       });
     }
 
+    const referredByUid = providedReferralCode ? await this.getReferrerUid(providedReferralCode) : null;
     let identityUser = await this.identityProvider.getUserByEmail(payload.email);
     if (!identityUser) {
       identityUser = await this.identityProvider.createUser({
@@ -121,7 +118,7 @@ export class AuthService {
     }
 
     const now = new Date();
-    const referralCode = await this.generateUniqueReferralCode();
+    const generatedReferralCode = await this.generateUniqueReferralCode();
     const user = {
       uid: identityUser.uid,
       fullname: payload.fullname,
@@ -133,7 +130,7 @@ export class AuthService {
       city: payload.city,
       country: payload.country,
       profileImageUrl: null,
-      referralCode,
+      referralCode: generatedReferralCode,
       referredByUid,
       referralBonusAwarded: false,
       role: 'user',
@@ -146,12 +143,28 @@ export class AuthService {
     };
 
     await this.userRepository.create(user);
-    if (this.config.authVerificationMode === 'email_link') {
-      await this.sendVerificationEmail(payload.email);
-    } else {
-      await this.issueOtp(payload.email, OTP_PURPOSE.REGISTER_VERIFY);
-    }
+    await this.deliverRegistrationVerification(payload.email);
     return registerResponseData(user);
+  }
+
+  async getReferrerUid(referralCode) {
+    const referrer = await this.userRepository.getByReferralCode(referralCode);
+    if (!referrer) {
+      throw new ApplicationError({
+        code: 'referral_code_not_found',
+        message: 'No user found for the provided referral code.',
+        statusCode: 404,
+      });
+    }
+    return referrer.uid;
+  }
+
+  async deliverRegistrationVerification(email) {
+    if (this.config.authVerificationMode === 'email_link') {
+      await this.sendVerificationEmail(email);
+      return;
+    }
+    await this.issueOtp(email, OTP_PURPOSE.REGISTER_VERIFY);
   }
 
   async generateUniqueReferralCode() {
