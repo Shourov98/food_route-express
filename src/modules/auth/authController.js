@@ -59,6 +59,12 @@ export function createAuthController({ getAuthService, config }) {
       res.json(successResponse(data, 'Login completed successfully.'));
     },
 
+    async logout(req, res) {
+      const authService = await service();
+      await authService.logout(requireBearerToken(req));
+      res.json(messageResponse('Logout completed successfully.'));
+    },
+
     async refresh(req, res) {
       const { refreshToken } = validateRefresh(req.body);
       const authService = await service();

@@ -408,7 +408,24 @@ export const endpointCatalog = {
           }
         }
       }
-},},
+	},},
+  'POST /api/v1/auth/logout': {
+    responses: {
+      "200": {
+        "description": "Logout completed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MessageResponse"
+            },
+            "example": {
+              "success": true,
+              "message": "Logout completed successfully."
+            }
+          }
+        }
+      }
+	},},
   'POST /api/v1/auth/forgot-password': {
     requestBody: makeJsonRequestBody({
       description: 'Begin the forgot-password flow.',

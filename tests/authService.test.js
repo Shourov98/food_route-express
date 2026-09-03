@@ -85,6 +85,7 @@ class FakeIdentityProvider {
   constructor() {
     this.usersByEmail = new Map();
     this.verified = new Set();
+    this.revokedUids = [];
   }
 
   async createUser({ email }) {
@@ -99,6 +100,10 @@ class FakeIdentityProvider {
 
   async markEmailVerified(uid) {
     this.verified.add(uid);
+  }
+
+  async revokeRefreshTokens(uid) {
+    this.revokedUids.push(uid);
   }
 
   async signIn({ email }) {
@@ -414,4 +419,29 @@ test('AuthService login rejects unverified users with matching code', async () =
     service.login({ email: 'jane@example.com', password: 'Password123' }),
     { code: 'user_not_verified', statusCode: 403 },
   );
+});
+
+test('AuthService logout revokes refresh tokens for the authenticated user', async () => {
+  const { service, userRepository, identityProvider } = createService();
+  await userRepository.create({
+    uid: 'user-1',
+    email: 'jane@example.com',
+    fullname: 'Jane Doe',
+    gender: 'female',
+    dateOfBirth: '1996-05-14',
+    city: 'Dhaka',
+    country: 'Bangladesh',
+    referralCode: 'ABCDEFGH',
+    role: 'user',
+    isBlocked: false,
+    isVerified: true,
+  });
+  identityProvider.usersByEmail.set('jane@example.com', {
+    uid: 'user-1',
+    email: 'jane@example.com',
+  });
+
+  await service.logout('token-user-1');
+
+  assert.deepEqual(identityProvider.revokedUids, ['user-1']);
 });

@@ -23,6 +23,7 @@ Native Express implementation started:
 - `POST /api/v1/auth/send-verification-email`
 - `POST /api/v1/auth/verify-otp`
 - `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/forgot-password`
 - `POST /api/v1/auth/resend-forgot-otp`

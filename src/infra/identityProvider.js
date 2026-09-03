@@ -152,7 +152,7 @@ export class FirebaseIdentityProvider {
 
   async verifyIdToken(idToken) {
     try {
-      const claims = await this.auth.verifyIdToken(idToken);
+      const claims = await this.auth.verifyIdToken(idToken, true);
       return { uid: claims.uid, email: claims.email ?? '' };
     } catch (error) {
       throw new ApplicationError({
@@ -160,6 +160,14 @@ export class FirebaseIdentityProvider {
         message: 'The access token is invalid or expired.',
         statusCode: 401,
       });
+    }
+  }
+
+  async revokeRefreshTokens(uid) {
+    try {
+      await this.auth.revokeRefreshTokens(uid);
+    } catch (error) {
+      throw mapFirebaseAdminError(error, 'Failed to revoke the Firebase Auth refresh tokens.');
     }
   }
 

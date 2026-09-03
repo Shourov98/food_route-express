@@ -277,6 +277,18 @@ export class AuthService {
     return loginResponseData(user, signInResult);
   }
 
+  async logout(accessToken) {
+    const user = await getAuthenticatedAccount({
+      accessToken,
+      identityProvider: this.identityProvider,
+      userRepository: this.userRepository,
+      notFoundCode: 'user_not_found',
+      notFoundMessage: 'No user found for the provided credentials.',
+      notFoundStatusCode: 404,
+    });
+    await this.identityProvider.revokeRefreshTokens(user.uid);
+  }
+
   // Idempotent per UTC day: opening the app N times counts as one streak day.
   async recordActivity({ accessToken, now = new Date() }) {
     const user = await getAuthenticatedAccount({
